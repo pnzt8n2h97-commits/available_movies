@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    { "source": "/manifest.json", "destination": "/api" },
+    { "source": "/showcase.json", "destination": "/api" },
+    { "source": "/:config/showcase.json", "destination": "/api" },
+    { "source": "/catalog/:path*", "destination": "/api" },
+    { "source": "/:config/manifest.json", "destination": "/api" },
+    { "source": "/:config/catalog/:path*", "destination": "/api" },
+    { "source": "/configure", "destination": "/index.html" },
+    { "source": "/:config/configure", "destination": "/index.html" }
+  ]
+}

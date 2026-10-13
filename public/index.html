@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digital Releases for Stremio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#120f1c; --panel:#1e1830; --text:#efeafb; --muted:#a29ac0; --accent:#8f7bff; --ink:#120f1c; --line:#2e2645; --bad:#ff8a8a; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1120px; margin:0 auto; padding:0 20px; }
+  header { padding:64px 0 28px; }
+  h1 { font-size:clamp(2.3rem,8vw,5rem); font-weight:800; line-height:.98; letter-spacing:-.03em; margin:0 0 18px; max-width:14ch; }
+  .lede { color:var(--muted); font-size:1.1rem; max-width:48ch; margin:0; }
+
+  form { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:24px; max-width:620px; display:grid; gap:18px; }
+  label { display:block; font-weight:600; margin-bottom:6px; }
+  .hint { color:var(--muted); font-size:.88rem; margin:6px 0 0; }
+  .hint a { color:var(--accent); }
+  input, select { width:100%; font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  input:focus-visible, select:focus-visible, .btn:focus-visible, .poster:focus-visible { outline:3px solid #fff; outline-offset:2px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:520px) { .row { grid-template-columns:1fr; } }
+  .err { color:var(--bad); font-size:.88rem; margin:6px 0 0; min-height:1.3em; }
+
+  .actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:4px; }
+  .btn { font:inherit; font-weight:600; padding:13px 20px; border-radius:12px; border:1px solid transparent; cursor:pointer; text-decoration:none; display:inline-block; }
+  .btn.primary { background:var(--accent); color:var(--ink); }
+  .btn.ghost { background:transparent; color:var(--text); border-color:var(--line); }
+  .btn.ghost:hover { background:var(--bg); }
+  .btn[aria-disabled="true"], .btn:disabled { opacity:.4; cursor:not-allowed; }
+  .url { font-size:.85rem; color:var(--muted); word-break:break-all; }
+  .url code { color:var(--text); }
+  .warn { font-size:.85rem; color:var(--muted); border-top:1px solid var(--line); padding-top:14px; margin:0; }
+
+  .wall-head { display:flex; justify-content:space-between; align-items:baseline; margin:40px 0 14px; }
+  .wall-head h2 { font-size:1.1rem; margin:0; }
+  .wall-head span { color:var(--muted); font-size:.9rem; }
+  .wall { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:14px; padding-bottom:64px; }
+  .poster { display:block; color:inherit; text-decoration:none; border-radius:10px; overflow:hidden; background:var(--panel); aspect-ratio:2/3; position:relative; }
+  .poster img { width:100%; height:100%; object-fit:cover; display:block; }
+  .poster .cap { position:absolute; inset:auto 0 0 0; padding:28px 10px 10px; background:linear-gradient(transparent,rgba(8,6,14,.92)); font-size:.85rem; font-weight:600; line-height:1.25; opacity:0; transition:opacity .15s; }
+  .poster:hover .cap, .poster:focus-visible .cap { opacity:1; }
+  @media (hover:none) { .poster .cap { opacity:1; } }
+  .noimg { display:grid; place-items:center; height:100%; padding:12px; text-align:center; color:var(--muted); font-size:.9rem; }
+  .msg { grid-column:1/-1; color:var(--muted); padding:22px; background:var(--panel); border-radius:12px; }
+  .skeleton { background:var(--panel); border-radius:10px; aspect-ratio:2/3; }
+  @media (prefers-reduced-motion:no-preference) { .skeleton { animation:p 1.4s ease-in-out infinite; } @keyframes p { 50% { opacity:.55; } } }
+  .reel { --gap:12px; display:none; overflow:hidden; height:clamp(150px,26vw,230px); padding-top:16px; box-sizing:content-box;
+    -webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent); mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent); }
+  .reel.on { display:block; }
+  .reel .track { display:flex; gap:var(--gap); padding-right:var(--gap); width:max-content; height:100%; }
+  .reel img { height:100%; aspect-ratio:2/3; object-fit:cover; border-radius:8px; background:var(--panel); user-select:none; pointer-events:none; }
+  @media (prefers-reduced-motion:no-preference) { .reel .track { animation:drift 90s linear infinite; } @keyframes drift { to { transform:translateX(-50%); } } }
+  footer { border-top:1px solid var(--line); padding:22px 0 40px; color:var(--muted); font-size:.85rem; }
+</style>
+</head>
+<body>
+<div class="reel" id="reel" aria-hidden="true"></div>
+<div class="wrap">
+  <header>
+    <h1>Movies you can rent or buy right now.</h1>
+    <p class="lede">A Stremio catalog that hides anything still stuck in theaters. Add your keys, pick a region, and install.</p>
+  </header>
+
+  <form id="form" autocomplete="off" novalidate>
+    <div>
+      <label for="tmdb">TMDB API key (required)</label>
+      <input id="tmdb" name="tmdb" type="text" spellcheck="false" autocapitalize="off" placeholder="Paste your v3 key or v4 read token">
+      <p class="hint">Free at <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org/settings/api</a>.</p>
+      <p class="err" id="tmdbErr" role="alert"></p>
+    </div>
+    <div>
+      <label for="provider">Poster style</label>
+      <select id="provider">
+        <option value="tmdb">Plain posters (TMDB)</option>
+        <option value="rpdb">Rating posters: RPDB</option>
+        <option value="custom">Rating posters: ERDB, XRDB, Posters+, Pictorium or other (custom URL)</option>
+      </select>
+    </div>
+    <div id="rpdbBox" hidden>
+      <label for="rpdb">RPDB key</label>
+      <input id="rpdb" name="rpdb" type="text" spellcheck="false" autocapitalize="off" placeholder="Paste your RPDB key">
+      <p class="hint">Prefilled with the free key <code>t0-free-rpdb</code>, which only covers popular titles (others show plain posters). For full coverage, replace it with your own key from <a href="https://ratingposterdb.com" target="_blank" rel="noopener">ratingposterdb.com</a>.</p>
+      <p class="err" id="rpdbErr" role="alert"></p>
+    </div>
+    <div id="customBox" hidden>
+      <label for="tpl">Poster URL pattern</label>
+      <input id="tpl" name="tpl" type="text" spellcheck="false" autocapitalize="off" placeholder="https://your-provider/poster/{imdb_id}.jpg?...">
+      <p class="hint">Open your provider's configurator and copy its poster URL. Replace the movie ID in it with <code>{imdb_id}</code> (or <code>{tmdb_id}</code> if it wants a TMDB ID). Must start with https://.</p>
+      <p class="hint">Providers: <a href="https://github.com/manuel09/erdb" target="_blank" rel="noopener">ERDB</a>, <a href="https://xrdb.alinvps.duckdns.org/configurator" target="_blank" rel="noopener">XRDB</a>, <a href="https://docs.elfhosted.com/app/postersplus/" target="_blank" rel="noopener">Posters+</a>, <a href="https://store.elfhosted.com/product/pictorium/" target="_blank" rel="noopener">Pictorium</a>. Use the Preview button to check that the posters load.</p>
+      <p class="err" id="tplErr" role="alert"></p>
+    </div>
+    <div class="row">
+      <div>
+        <label for="region">Region</label>
+        <select id="region">
+          <option value="US">United States</option><option value="GB">United Kingdom</option><option value="CA">Canada</option>
+          <option value="AU">Australia</option><option value="DE">Germany</option><option value="FR">France</option>
+          <option value="ES">Spain</option><option value="IT">Italy</option><option value="NL">Netherlands</option>
+          <option value="SE">Sweden</option><option value="BR">Brazil</option><option value="MX">Mexico</option>
+          <option value="IN">India</option><option value="JP">Japan</option><option value="KR">South Korea</option>
+        </select>
+      </div>
+      <div>
+        <label for="days">Released within</label>
+        <select id="days">
+          <option value="30">Last 30 days</option><option value="60">Last 60 days</option>
+          <option value="90" selected>Last 90 days</option><option value="180">Last 180 days</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="actions">
+      <a class="btn primary" id="install" href="#" aria-disabled="true">Install in Stremio</a>
+      <button class="btn ghost" id="copy" type="button" disabled>Copy add-on link</button>
+      <button class="btn ghost" id="preview" type="button" disabled>Preview catalog</button>
+    </div>
+    <p class="url" id="url">Enter your TMDB key to generate the add-on link.</p>
+    <p class="warn">Your keys are stored inside the add-on link so Stremio can use them. Don't share the link publicly.</p>
+  </form>
+
+  <div class="wall-head"><h2>Preview</h2><span id="count"></span></div>
+  <div class="wall" id="wall"><div class="msg">Press "Preview catalog" to see what your settings return.</div></div>
+
+  <footer>Movie data from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB. Rating posters come from the provider you choose.</footer>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const KEY_RE = /^[\w.-]+$/;
+  const RPDB_RE = /^[\w-]+$/;
+
+  const enc = (o) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const dec = (s) => JSON.parse(atob(s.replace(/-/g, "+").replace(/_/g, "/")));
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // Prefill when opened from Stremio's Configure button (/<config>/configure).
+  const pm = location.pathname.match(/^\/([^/]+)\/configure\/?$/);
+  if (pm) {
+    try {
+      const c = dec(pm[1]);
+      $("tmdb").value = c.tmdbKey || "";
+      $("rpdb").value = c.rpdbKey || "";
+      $("tpl").value = c.posterTemplate || "";
+      $("provider").value = c.posterProvider || (c.rpdbKey ? "rpdb" : "tmdb");
+      if (c.region) $("region").value = c.region;
+      if (c.days) $("days").value = String(c.days);
+    } catch {}
+  }
+
+  function state() {
+    const provider = $("provider").value;
+    const tmdb = $("tmdb").value.trim();
+    const rpdb = $("rpdb").value.trim();
+    const tpl = $("tpl").value.trim();
+    const tmdbBad = tmdb && !KEY_RE.test(tmdb);
+    const rpdbBad = provider === "rpdb" && (!rpdb || !RPDB_RE.test(rpdb));
+    const tplBad = provider === "custom" && !(/^https:\/\/[\x21-\x7e]+$/.test(tpl) && /\{(imdb_id|tmdb_id)\}/.test(tpl));
+    $("tmdbErr").textContent = tmdbBad ? "Keys can only contain letters, numbers, dots, dashes and underscores." : "";
+    $("rpdbErr").textContent = rpdbBad && rpdb ? "Keys can only contain letters, numbers, dashes and underscores." : "";
+    $("tplErr").textContent = tplBad && tpl ? "Use an https:// URL with no spaces that includes {imdb_id} or {tmdb_id}." : "";
+    const ok = !!tmdb && !tmdbBad && !rpdbBad && !tplBad;
+    const cfg = { tmdbKey: tmdb, posterProvider: provider, region: $("region").value, days: Number($("days").value) };
+    if (provider === "rpdb") cfg.rpdbKey = rpdb;
+    if (provider === "custom") cfg.posterTemplate = tpl;
+    const config = enc(cfg);
+    return { ok, config };
+  }
+
+  function update() {
+    $("rpdbBox").hidden = $("provider").value !== "rpdb";
+    $("customBox").hidden = $("provider").value !== "custom";
+    const { ok, config } = state();
+    const path = `/${config}/manifest.json`;
+    const install = $("install");
+    install.setAttribute("aria-disabled", String(!ok));
+    install.href = ok ? `stremio://${location.host}${path}` : "#";
+    $("copy").disabled = !ok;
+    $("preview").disabled = !ok;
+    if (ok && reelFor === "") {
+      const tag = $("tmdb").value.trim();
+      clearTimeout(reelTimer);
+      reelTimer = setTimeout(() => reelFor === "" && loadReel(`/${enc({ tmdbKey: tag, region: $("region").value, days: Number($("days").value) })}/showcase.json`, tag), 600);
+    }
+    $("url").innerHTML = ok ? `Add-on link: <code>${esc(location.origin + path)}</code>` : "Enter your TMDB key to generate the add-on link.";
+  }
+
+  ["tmdb", "provider", "rpdb", "tpl", "region", "days"].forEach((id) => $(id).addEventListener("input", update));
+  // Selecting RPDB prefills the free key if the field is empty.
+  $("provider").addEventListener("change", () => {
+    if ($("provider").value === "rpdb" && !$("rpdb").value.trim()) $("rpdb").value = "t0-free-rpdb";
+    update();
+  });
+  $("install").addEventListener("click", (e) => { if ($("install").getAttribute("aria-disabled") === "true") e.preventDefault(); });
+  $("form").addEventListener("submit", (e) => e.preventDefault());
+
+  $("copy").addEventListener("click", async () => {
+    const { config } = state();
+    try { await navigator.clipboard.writeText(`${location.origin}/${config}/manifest.json`); $("copy").textContent = "Copied"; }
+    catch { $("copy").textContent = "Copy failed. Select the link below."; }
+    setTimeout(() => ($("copy").textContent = "Copy add-on link"), 2000);
+  });
+
+  $("preview").addEventListener("click", () => {
+    const { ok, config } = state();
+    if (!ok) return;
+    const wall = $("wall");
+    $("count").textContent = "";
+    wall.innerHTML = Array.from({ length: 12 }, () => '<div class="skeleton"></div>').join("");
+    fetch(`/${config}/catalog/movie/digital-releases.json`)
+      .then((r) => r.json().then((j) => { if (!r.ok) throw new Error(j.error || r.status); return j; }))
+      .then(({ metas }) => {
+        if (!metas.length) { wall.innerHTML = '<div class="msg">No digital releases found for this region and range. Try a longer range.</div>'; return; }
+        $("count").textContent = metas.length + " titles";
+        wall.innerHTML = metas.map((m) => `
+          <a class="poster" href="stremio:///detail/movie/${encodeURIComponent(m.id)}" title="${esc(m.name)}">
+            ${m.poster ? `<img src="${esc(m.poster)}" alt="" loading="lazy">` : `<div class="noimg">${esc(m.name)}</div>`}
+            <div class="cap">${esc(m.name)}${m.releaseInfo ? " (" + esc(m.releaseInfo) + ")" : ""}</div>
+          </a>`).join("");
+      })
+      .catch((err) => { wall.innerHTML = `<div class="msg">Couldn't load the catalog: ${esc(err.message)}. Check your keys and try again.</div>`; });
+  });
+
+  // Decorative poster strip: shuffled new digital releases. Not clickable.
+  let reelFor = "", reelTimer;
+  const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  function loadReel(path, tag) {
+    fetch(path)
+      .then((r) => (r.ok ? r.json() : { posters: [] }))
+      .then(({ posters }) => {
+        if (!posters || !posters.length) return;
+        const imgs = shuffle(posters.slice()).slice(0, 20)
+          .map((u) => `<img src="${esc(u)}" alt="" loading="lazy" draggable="false">`).join("");
+        $("reel").innerHTML = `<div class="track">${imgs}${imgs}</div>`;
+        $("reel").classList.add("on");
+        reelFor = tag;
+      })
+      .catch(() => {});
+  }
+  // Works with no input if the site owner set TMDB_KEY on Vercel; otherwise fills in once a key is entered.
+  loadReel("/showcase.json", "default");
+
+  update();
+</script>
+</body>
+</html>
