@@ -61,13 +61,15 @@ function parseConfig(b64) {
     : process.env.REGION || "US";
   const days = Math.min(365, Math.max(1, Number(c.days) || Number(process.env.DAYS_BACK) || 90));
   const validRpdb = /^[\w-]+$/.test(rpdbKey) ? rpdbKey : "";
+  const topKey = String(c.topKey || process.env.TOPPOSTERS_KEY || "").trim();
+  const validTop = /^[\w.-]+$/.test(topKey) ? topKey : "";
   // Custom template, e.g. a poster URL pattern from ERDB, XRDB, Posters+ or Pictorium.
   const tpl = String(c.posterTemplate || "").trim();
   const posterTemplate =
     tpl.length <= 1500 && /^https:\/\/[\x21-\x7e]+$/.test(tpl) && /\{(imdb_id|tmdb_id)\}/.test(tpl)
       ? tpl
       : "";
-  const posterProvider = ["tmdb", "rpdb", "custom"].includes(c.posterProvider)
+  const posterProvider = ["tmdb", "rpdb", "topposters", "custom"].includes(c.posterProvider)
     ? c.posterProvider
     : validRpdb
     ? "rpdb"
@@ -85,6 +87,7 @@ function parseConfig(b64) {
     trashParts: tp.length ? tp : Object.keys(TRASH),
     tmdbKey: /^[\w.-]+$/.test(tmdbKey) ? tmdbKey : "",
     rpdbKey: validRpdb,
+    topKey: validTop,
     posterProvider,
     posterTemplate,
     name: String(c.name || "").trim().slice(0, 40),
@@ -101,6 +104,14 @@ const isoDate = (d) => d.toISOString().slice(0, 10);
 const daysAgo = (n) => isoDate(new Date(Date.now() - n * 86400000));
 const today = () => isoDate(new Date());
 
+// COMPATIBILITY (so installed copies keep working and never need a reinstall):
+// - Never rename or remove a catalog key below, or change the URL routes. Old installs call these exact ids.
+// - Never remove or rename a config field in parseConfig. Old install links must keep decoding the same way,
+//   and any new field needs a default so older links still work.
+// - Never change how the manifest id is hashed in buildManifest: a new id installs as a duplicate.
+// - Changing filters, sorting, date windows or posters is safe: it reaches every install automatically.
+// - Adding or renaming catalogs, genre options or names changes the manifest, so Stremio only shows
+//   them after a reinstall. Avoid doing this casually.
 // Each catalog = how to query TMDB. Key is "<stremio type>/<catalog id>".
 const CATALOGS = {
   "movie/digital-releases": (cfg) => ({
@@ -139,35 +150,96 @@ const CATALOGS = {
   }),
 };
 
-// "Trash TV" is its own add-on mode (reality, dating, soaps, talk shows), not a genre of the main one.
-// Genre ids: 10764 Reality, 10766 Soap, 10767 Talk. "recent" rows only show shows with an episode in the last 14 days.
-const TRASH = {
-  reality: { name: "Reality and Dating: On Now", genres: "10764", recent: true },
-  soaps: { name: "Soaps and Telenovelas: On Now", genres: "10766", recent: true },
-  talk: { name: "Talk Shows and Tabloid: On Now", genres: "10767", recent: true },
-  binge: { name: "Guilty-Pleasure Binges", genres: "10764|10766", recent: false },
-};
-for (const [id, t] of Object.entries(TRASH)) {
-  CATALOGS[`series/trash-${id}`] = (cfg) => ({
-    kind: "tv",
-    path: "/discover/tv",
-    params: {
-      watch_region: cfg.region,
-      with_watch_monetization_types: WATCH_TYPES,
-      with_genres: t.genres,
-      ...(t.recent ? { "air_date.gte": daysAgo(14), "air_date.lte": today() } : {}),
-      sort_by: "popularity.desc",
-    },
+// "Trash TV" is its own add-on mode: Bravo-style reality (Real Housewives, Below Deck, Vanderpump Rules...),
+// not a genre of the main one. Franchises are matched by name, so no TMDB network ids are needed.
+const FRANCHISES = [
+  "Real Housewives", "Below Deck", "Vanderpump Rules", "Summer House", "Southern Charm",
+  "Married to Medicine", "Million Dollar Listing", "Love Island", "Love Is Blind",
+  "Too Hot to Handle", "Selling Sunset", "The Bachelor", "90 Day Fiance", "Jersey Shore",
+];
+const normName = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const matchesFranchise = (name) => FRANCHISES.some((f) => normName(name).includes(normName(f)));
+const keyHash = (k) => crypto.createHash("sha1").update(String(k)).digest("hex").slice(0, 10);
+
+// Tiny in-memory cache (per warm serverless instance) so paging doesn't repeat many TMDB calls.
+const memo = new Map();
+async function memoized(key, ttlMs, fn) {
+  const hit = memo.get(key);
+  if (hit && hit.exp > Date.now()) return hit.val;
+  const val = await fn();
+  memo.set(key, { val, exp: Date.now() + ttlMs });
+  if (memo.size > 200) memo.delete(memo.keys().next().value);
+  return val;
+}
+
+// All matching shows, found by searching each franchise name; most popular first.
+function franchiseShows(cfg) {
+  return memoized("fr:" + keyHash(cfg.tmdbKey), 600000, async () => {
+    const lists = await Promise.all(
+      FRANCHISES.map((f) =>
+        tmdb(cfg.tmdbKey, "/search/tv", { query: f, include_adult: "false" })
+          .then((d) => d.results.filter((m) => matchesFranchise(m.name)).slice(0, 6))
+          .catch(() => [])
+      )
+    );
+    const seen = new Set();
+    return lists
+      .flat()
+      .filter((m) => !seen.has(m.id) && seen.add(m.id))
+      .sort((a, b) => b.popularity - a.popularity)
+      .slice(0, 60);
   });
 }
+
+// US reality shows with an episode in the last 14 days, filtered down to those franchises.
+function franchiseOnNow(cfg) {
+  return memoized("now:" + keyHash(cfg.tmdbKey), 600000, async () => {
+    const pages = await Promise.all(
+      [1, 2, 3].map((page) =>
+        tmdb(cfg.tmdbKey, "/discover/tv", {
+          with_genres: "10764", // Reality
+          with_origin_country: "US",
+          "air_date.gte": daysAgo(14),
+          "air_date.lte": today(),
+          sort_by: "popularity.desc",
+          page: String(page),
+        })
+      )
+    );
+    const seen = new Set();
+    return pages
+      .flatMap((d) => d.results)
+      .filter((m) => matchesFranchise(m.name) && !seen.has(m.id) && seen.add(m.id));
+  });
+}
+
+const TRASH = {
+  bravo: { name: "Bravo Universe" },
+  bravonow: { name: "Bravo Universe: On Now" },
+  reality: { name: "Reality: On Now" },
+};
+// "custom" rows are hand-built lists; the others are plain TMDB discover queries.
+CATALOGS["series/trash-bravo"] = () => ({ kind: "tv", custom: franchiseShows });
+CATALOGS["series/trash-bravonow"] = () => ({ kind: "tv", custom: franchiseOnNow });
+CATALOGS["series/trash-reality"] = () => ({
+  kind: "tv",
+  path: "/discover/tv",
+  params: {
+    with_genres: "10764", // Reality
+    with_origin_country: "US",
+    "air_date.gte": daysAgo(14),
+    "air_date.lte": today(),
+    sort_by: "popularity.desc",
+  },
+});
 
 function buildTrashManifest(cfg, cfgKey) {
   const suffix = "." + crypto.createHash("sha1").update(cfgKey || "").digest("hex").slice(0, 8);
   return {
     id: "community.trash-tv" + suffix,
-    version: "1.4.0",
-    name: cfg.name || `Trash TV (${cfg.region})`,
-    description: `Reality, dating, soap and talk shows streaming now in ${cfg.region}.`,
+    version: "1.5.0",
+    name: cfg.name || "Trash TV",
+    description: "Bravo-style reality TV: Real Housewives, Below Deck, Vanderpump Rules and more.",
     resources: ["catalog"],
     types: ["series"],
     catalogs: Object.keys(TRASH)
@@ -246,6 +318,11 @@ function posterUrl(cfg, imdb, m, kind) {
     // fallback=true makes RPDB return the plain poster if it has no rated version.
     return `https://api.ratingposterdb.com/${cfg.rpdbKey}/imdb/poster-default/${imdb}.jpg?fallback=true`;
   }
+  if (cfg.posterProvider === "topposters" && cfg.topKey) {
+    // fallback_url makes Top Posters redirect to the plain TMDB poster if it has no rated one.
+    const q = m.poster_path ? `?fallback_url=${encodeURIComponent(`${IMG}/w342${m.poster_path}`)}` : "";
+    return `https://api.top-posters.com/${cfg.topKey}/imdb/poster/${imdb}.jpg${q}`;
+  }
   if (cfg.posterProvider === "custom" && cfg.posterTemplate) {
     return cfg.posterTemplate
       .split("{imdb_id}").join(imdb)
@@ -257,18 +334,25 @@ function posterUrl(cfg, imdb, m, kind) {
 
 async function getCatalog(cfg, key, skip, genre) {
   const def = CATALOGS[key](cfg);
-  const picked = cfg.genre && cfg.mode !== "trash" ? GENRE_PICK[cfg.genre] : null;
-  const genreId = picked ? picked[def.kind === "tv" ? "tv" : "movie"] : GENRE_IDS[def.kind][genre];
-  if (genreId) def.params.with_genres = String(genreId);
-  const page = Math.floor(skip / PAGE_SIZE) + 1;
-  const data = await tmdb(cfg.tmdbKey, def.path, {
-    ...def.params,
-    include_adult: "false",
-    page: String(page),
-  });
+  let results;
+  if (def.custom) {
+    // Hand-built lists (franchise searches) are paged in memory.
+    results = (await def.custom(cfg)).slice(skip, skip + PAGE_SIZE);
+  } else {
+    const picked = cfg.genre && cfg.mode !== "trash" ? GENRE_PICK[cfg.genre] : null;
+    const genreId = picked ? picked[def.kind === "tv" ? "tv" : "movie"] : GENRE_IDS[def.kind][genre];
+    if (genreId) def.params.with_genres = String(genreId);
+    const page = Math.floor(skip / PAGE_SIZE) + 1;
+    const data = await tmdb(cfg.tmdbKey, def.path, {
+      ...def.params,
+      include_adult: "false",
+      page: String(page),
+    });
+    results = data.results;
+  }
 
   const metas = await Promise.all(
-    data.results.map(async (m) => {
+    results.map(async (m) => {
       const imdb = await getImdbId(cfg.tmdbKey, def.kind, m.id);
       if (!imdb) return null;
       const date = m.release_date || m.first_air_date;
@@ -287,22 +371,24 @@ async function getCatalog(cfg, key, skip, genre) {
 }
 
 // Decorative poster list for the landing page (plain TMDB posters).
-// "movie" = new digital releases; "tv" = new shows plus shows with episodes this week.
+// "movie" = new digital releases; "tv" = new shows plus shows with episodes this week; "trash" = Trash TV rows.
 async function getShowcase(cfg, kind) {
   const sources =
     kind === "tv"
       ? [["series/streaming-new", 1], ["series/streaming-new", 2], ["series/streaming-airing", 1]]
       : kind === "trash"
-      ? [["series/trash-reality", 1], ["series/trash-soaps", 1], ["series/trash-talk", 1], ["series/trash-binge", 1], ["series/trash-reality", 2]]
+      ? [["series/trash-bravo", 1], ["series/trash-bravonow", 1], ["series/trash-reality", 1], ["series/trash-reality", 2]]
       : [["movie/digital-releases", 1], ["movie/digital-releases", 2]];
-  const pages = await Promise.all(
-    sources.map(([key, page]) => {
+  const lists = await Promise.all(
+    sources.map(async ([key, page]) => {
       const def = CATALOGS[key](cfg);
-      return tmdb(cfg.tmdbKey, def.path, { ...def.params, include_adult: "false", page: String(page) });
+      if (def.custom) return (await def.custom(cfg)).slice(0, 24);
+      const d = await tmdb(cfg.tmdbKey, def.path, { ...def.params, include_adult: "false", page: String(page) });
+      return d.results;
     })
   );
-  const posters = pages
-    .flatMap((d) => d.results)
+  const posters = lists
+    .flat()
     .filter((m) => m.poster_path)
     .map((m) => `${IMG}/w342${m.poster_path}`);
   return { posters: [...new Set(posters)] };
