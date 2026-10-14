@@ -1,9 +1,49 @@
-// Vercel serverless function: Stremio manifest + catalog.
+// Vercel serverless function: Stremio manifest + catalogs for movies and TV shows.
 // Each user's settings travel in the install URL: /<base64url-json>/manifest.json
 // Optional env fallbacks: TMDB_KEY, RPDB_KEY, REGION, DAYS_BACK
 
+const crypto = require("crypto");
+
 const PAGE_SIZE = 20;
 const IMG = "https://image.tmdb.org/t/p";
+const WATCH_TYPES = "flatrate|free|ads|rent|buy";
+
+// Genre label (shown in Stremio) -> TMDB genre id. Movies and TV use different lists.
+const GENRE_IDS = {
+  movie: {
+    Action: 28, Adventure: 12, Animation: 16, Comedy: 35, Crime: 80, Documentary: 99,
+    Drama: 18, Family: 10751, Fantasy: 14, History: 36, Horror: 27, Music: 10402,
+    Mystery: 9648, Romance: 10749, "Science Fiction": 878, Thriller: 53, War: 10752, Western: 37,
+  },
+  tv: {
+    "Action and Adventure": 10759, Animation: 16, Comedy: 35, Crime: 80, Documentary: 99,
+    Drama: 18, Family: 10751, Kids: 10762, Mystery: 9648, Reality: 10764,
+    "Sci-Fi and Fantasy": 10765, Soap: 10766, Talk: 10767, "War and Politics": 10768, Western: 37,
+  },
+};
+
+// Single-genre installs: one pick maps to a TMDB genre id per type (null = that type has no such genre).
+const GENRE_PICK = {
+  Action: { movie: 28, tv: 10759 }, Adventure: { movie: 12, tv: 10759 }, Animation: { movie: 16, tv: 16 },
+  Comedy: { movie: 35, tv: 35 }, Crime: { movie: 80, tv: 80 }, Documentary: { movie: 99, tv: 99 },
+  Drama: { movie: 18, tv: 18 }, Family: { movie: 10751, tv: 10751 }, Fantasy: { movie: 14, tv: 10765 },
+  History: { movie: 36, tv: null }, Horror: { movie: 27, tv: null }, Kids: { movie: null, tv: 10762 },
+  Music: { movie: 10402, tv: null }, Mystery: { movie: 9648, tv: 9648 }, Reality: { movie: null, tv: 10764 },
+  Romance: { movie: 10749, tv: null }, "Science Fiction": { movie: 878, tv: 10765 },
+  Thriller: { movie: 53, tv: null }, War: { movie: 10752, tv: 10768 }, Western: { movie: 37, tv: 37 },
+};
+
+// Which parts are really on: the switches, minus types the picked genre doesn't exist for.
+function effective(cfg) {
+  const g = cfg.genre ? GENRE_PICK[cfg.genre] : null;
+  let movies = cfg.movies && (!g || !!g.movie);
+  let shows = cfg.shows && (!g || !!g.tv);
+  if (!movies && !shows && g) {
+    movies = !!g.movie;
+    shows = !!g.tv;
+  }
+  return { movies, shows };
+}
 
 function parseConfig(b64) {
   let c = {};
@@ -32,32 +72,143 @@ function parseConfig(b64) {
     : validRpdb
     ? "rpdb"
     : "tmdb";
+  // Movies and shows are on unless switched off; at least one must stay on.
+  let movies = c.movies !== false;
+  let shows = c.shows !== false;
+  if (!movies && !shows) movies = shows = true;
+  // Trash TV rows: keep only known ones; empty or invalid means all of them.
+  const tp = Array.isArray(c.trashParts)
+    ? [...new Set(c.trashParts.filter((p) => Object.prototype.hasOwnProperty.call(TRASH, p)))]
+    : [];
   return {
+    mode: c.mode === "trash" ? "trash" : "releases",
+    trashParts: tp.length ? tp : Object.keys(TRASH),
     tmdbKey: /^[\w.-]+$/.test(tmdbKey) ? tmdbKey : "",
     rpdbKey: validRpdb,
     posterProvider,
     posterTemplate,
+    name: String(c.name || "").trim().slice(0, 40),
+    genre:
+      typeof c.genre === "string" && Object.prototype.hasOwnProperty.call(GENRE_PICK, c.genre) ? c.genre : "",
+    movies,
+    shows,
     region,
     days,
   };
 }
 
-function buildManifest(cfg) {
+const isoDate = (d) => d.toISOString().slice(0, 10);
+const daysAgo = (n) => isoDate(new Date(Date.now() - n * 86400000));
+const today = () => isoDate(new Date());
+
+// Each catalog = how to query TMDB. Key is "<stremio type>/<catalog id>".
+const CATALOGS = {
+  "movie/digital-releases": (cfg) => ({
+    kind: "movie",
+    path: "/discover/movie",
+    params: {
+      region: cfg.region,
+      with_release_type: "4", // 4 = Digital
+      "release_date.gte": daysAgo(cfg.days),
+      "release_date.lte": today(),
+      sort_by: "popularity.desc",
+    },
+  }),
+  // TV has no "digital release", so "available" means on a streaming/rental service in the region.
+  "series/streaming-new": (cfg) => ({
+    kind: "tv",
+    path: "/discover/tv",
+    params: {
+      watch_region: cfg.region,
+      with_watch_monetization_types: WATCH_TYPES,
+      "first_air_date.gte": daysAgo(cfg.days),
+      "first_air_date.lte": today(),
+      sort_by: "popularity.desc",
+    },
+  }),
+  "series/streaming-airing": (cfg) => ({
+    kind: "tv",
+    path: "/discover/tv",
+    params: {
+      watch_region: cfg.region,
+      with_watch_monetization_types: WATCH_TYPES,
+      "air_date.gte": daysAgo(7),
+      "air_date.lte": today(),
+      sort_by: "popularity.desc",
+    },
+  }),
+};
+
+// "Trash TV" is its own add-on mode (reality, dating, soaps, talk shows), not a genre of the main one.
+// Genre ids: 10764 Reality, 10766 Soap, 10767 Talk. "recent" rows only show shows with an episode in the last 14 days.
+const TRASH = {
+  reality: { name: "Reality and Dating: On Now", genres: "10764", recent: true },
+  soaps: { name: "Soaps and Telenovelas: On Now", genres: "10766", recent: true },
+  talk: { name: "Talk Shows and Tabloid: On Now", genres: "10767", recent: true },
+  binge: { name: "Guilty-Pleasure Binges", genres: "10764|10766", recent: false },
+};
+for (const [id, t] of Object.entries(TRASH)) {
+  CATALOGS[`series/trash-${id}`] = (cfg) => ({
+    kind: "tv",
+    path: "/discover/tv",
+    params: {
+      watch_region: cfg.region,
+      with_watch_monetization_types: WATCH_TYPES,
+      with_genres: t.genres,
+      ...(t.recent ? { "air_date.gte": daysAgo(14), "air_date.lte": today() } : {}),
+      sort_by: "popularity.desc",
+    },
+  });
+}
+
+function buildTrashManifest(cfg, cfgKey) {
+  const suffix = "." + crypto.createHash("sha1").update(cfgKey || "").digest("hex").slice(0, 8);
   return {
-    id: "community.digital-releases",
-    version: "1.1.0",
-    name: "Digital Releases",
-    description: `Movies with a digital release in ${cfg.region} over the last ${cfg.days} days.`,
+    id: "community.trash-tv" + suffix,
+    version: "1.4.0",
+    name: cfg.name || `Trash TV (${cfg.region})`,
+    description: `Reality, dating, soap and talk shows streaming now in ${cfg.region}.`,
     resources: ["catalog"],
-    types: ["movie"],
-    catalogs: [
-      {
-        type: "movie",
-        id: "digital-releases",
-        name: "Digitally Available",
-        extra: [{ name: "skip" }],
-      },
-    ],
+    types: ["series"],
+    catalogs: Object.keys(TRASH)
+      .filter((id) => cfg.trashParts.includes(id))
+      .map((id) => ({ type: "series", id: `trash-${id}`, name: TRASH[id].name, extra: [{ name: "skip" }] })),
+    behaviorHints: { configurable: true, configurationRequired: false },
+  };
+}
+
+// Stremio treats the manifest id as the add-on's identity: same id = replaces the installed copy.
+// A short hash of the config makes every differently configured link install side by side.
+function buildManifest(cfg, cfgKey) {
+  if (cfg.mode === "trash") return buildTrashManifest(cfg, cfgKey);
+  const suffix = cfgKey ? "." + crypto.createHash("sha1").update(cfgKey).digest("hex").slice(0, 8) : "";
+  const movieExtra = [{ name: "genre", options: Object.keys(GENRE_IDS.movie) }, { name: "skip" }];
+  const tvExtra = [{ name: "genre", options: Object.keys(GENRE_IDS.tv) }, { name: "skip" }];
+  const { movies, shows } = effective(cfg);
+  const g = cfg.genre;
+  const prefix = g ? `${g}: ` : "";
+  // A genre install is already filtered, so it doesn't need the genre dropdown.
+  const mExtra = g ? [{ name: "skip" }] : movieExtra;
+  const tExtra = g ? [{ name: "skip" }] : tvExtra;
+  const catalogs = [];
+  if (movies) {
+    catalogs.push({ type: "movie", id: "digital-releases", name: prefix + "Digitally Available", extra: mExtra });
+  }
+  if (shows) {
+    catalogs.push({ type: "series", id: "streaming-new", name: prefix + "New Shows Streaming", extra: tExtra });
+    catalogs.push({ type: "series", id: "streaming-airing", name: prefix + "New Episodes This Week", extra: tExtra });
+  }
+  const what = movies && shows ? "Movies with a digital release and shows streaming now" : movies ? "Movies with a digital release" : "Shows streaming now";
+  return {
+    id: "community.digital-releases" + suffix,
+    version: "1.3.0",
+    name:
+      cfg.name ||
+      (g ? `Digital Releases: ${g} (${cfg.region})` : cfgKey ? `Digital Releases (${cfg.region})` : "Digital Releases"),
+    description: `${what} in ${cfg.region}${g ? `, genre: ${g}` : ""}.`,
+    resources: ["catalog"],
+    types: [movies && "movie", shows && "series"].filter(Boolean),
+    catalogs,
     behaviorHints: { configurable: true, configurationRequired: false },
   };
 }
@@ -75,23 +226,22 @@ async function tmdb(key, path, params = {}) {
   return res.json();
 }
 
-// TMDB ids are global, so this cache is safe to share across users.
+// TMDB movie and TV ids overlap, so the cache key includes the kind.
 const imdbCache = new Map();
-async function getImdbId(key, tmdbId) {
-  if (imdbCache.has(tmdbId)) return imdbCache.get(tmdbId);
+async function getImdbId(key, kind, tmdbId) {
+  const ck = `${kind}:${tmdbId}`;
+  if (imdbCache.has(ck)) return imdbCache.get(ck);
   try {
-    const { imdb_id } = await tmdb(key, `/movie/${tmdbId}/external_ids`);
-    imdbCache.set(tmdbId, imdb_id || null);
+    const { imdb_id } = await tmdb(key, `/${kind}/${tmdbId}/external_ids`);
+    imdbCache.set(ck, imdb_id || null);
     return imdb_id || null;
   } catch {
     return null;
   }
 }
 
-const isoDate = (d) => d.toISOString().slice(0, 10);
-
 // Falls back to the plain TMDB poster whenever the chosen provider isn't fully configured.
-function posterUrl(cfg, imdb, m) {
+function posterUrl(cfg, imdb, m, kind) {
   if (cfg.posterProvider === "rpdb" && cfg.rpdbKey) {
     // fallback=true makes RPDB return the plain poster if it has no rated version.
     return `https://api.ratingposterdb.com/${cfg.rpdbKey}/imdb/poster-default/${imdb}.jpg?fallback=true`;
@@ -100,61 +250,56 @@ function posterUrl(cfg, imdb, m) {
     return cfg.posterTemplate
       .split("{imdb_id}").join(imdb)
       .split("{tmdb_id}").join(String(m.id))
-      .split("{type}").join("movie");
+      .split("{type}").join(kind); // "movie" or "tv"
   }
   return m.poster_path ? `${IMG}/w342${m.poster_path}` : undefined;
 }
 
-async function getCatalog(cfg, skip) {
+async function getCatalog(cfg, key, skip, genre) {
+  const def = CATALOGS[key](cfg);
+  const picked = cfg.genre && cfg.mode !== "trash" ? GENRE_PICK[cfg.genre] : null;
+  const genreId = picked ? picked[def.kind === "tv" ? "tv" : "movie"] : GENRE_IDS[def.kind][genre];
+  if (genreId) def.params.with_genres = String(genreId);
   const page = Math.floor(skip / PAGE_SIZE) + 1;
-  const now = new Date();
-  const from = new Date(now.getTime() - cfg.days * 86400000);
-
-  const data = await tmdb(cfg.tmdbKey, "/discover/movie", {
-    region: cfg.region,
-    with_release_type: "4", // 4 = Digital
-    "release_date.gte": isoDate(from),
-    "release_date.lte": isoDate(now),
-    sort_by: "popularity.desc",
+  const data = await tmdb(cfg.tmdbKey, def.path, {
+    ...def.params,
     include_adult: "false",
     page: String(page),
   });
 
   const metas = await Promise.all(
     data.results.map(async (m) => {
-      const imdb = await getImdbId(cfg.tmdbKey, m.id);
+      const imdb = await getImdbId(cfg.tmdbKey, def.kind, m.id);
       if (!imdb) return null;
-      const poster = posterUrl(cfg, imdb, m);
+      const date = m.release_date || m.first_air_date;
       return {
         id: imdb,
-        type: "movie",
-        name: m.title,
-        poster,
+        type: def.kind === "tv" ? "series" : "movie",
+        name: m.title || m.name,
+        poster: posterUrl(cfg, imdb, m, def.kind),
         background: m.backdrop_path ? `${IMG}/w780${m.backdrop_path}` : undefined,
         description: m.overview,
-        releaseInfo: m.release_date ? m.release_date.slice(0, 4) : undefined,
+        releaseInfo: date ? date.slice(0, 4) : undefined,
       };
     })
   );
   return { metas: metas.filter(Boolean) };
 }
 
-// Decorative poster list for the landing page (plain TMDB posters, no IMDb lookups needed).
-async function getShowcase(cfg) {
-  const now = new Date();
-  const from = new Date(now.getTime() - cfg.days * 86400000);
+// Decorative poster list for the landing page (plain TMDB posters).
+// "movie" = new digital releases; "tv" = new shows plus shows with episodes this week.
+async function getShowcase(cfg, kind) {
+  const sources =
+    kind === "tv"
+      ? [["series/streaming-new", 1], ["series/streaming-new", 2], ["series/streaming-airing", 1]]
+      : kind === "trash"
+      ? [["series/trash-reality", 1], ["series/trash-soaps", 1], ["series/trash-talk", 1], ["series/trash-binge", 1], ["series/trash-reality", 2]]
+      : [["movie/digital-releases", 1], ["movie/digital-releases", 2]];
   const pages = await Promise.all(
-    [1, 2].map((page) =>
-      tmdb(cfg.tmdbKey, "/discover/movie", {
-        region: cfg.region,
-        with_release_type: "4",
-        "release_date.gte": isoDate(from),
-        "release_date.lte": isoDate(now),
-        sort_by: "popularity.desc",
-        include_adult: "false",
-        page: String(page),
-      })
-    )
+    sources.map(([key, page]) => {
+      const def = CATALOGS[key](cfg);
+      return tmdb(cfg.tmdbKey, def.path, { ...def.params, include_adult: "false", page: String(page) });
+    })
   );
   const posters = pages
     .flatMap((d) => d.results)
@@ -172,34 +317,48 @@ function send(res, status, body, cache) {
 }
 
 module.exports = async (req, res) => {
-  const path = decodeURIComponent((req.url || "").split("?")[0]);
-  // [/<config>]/manifest.json  or  [/<config>]/catalog/movie/digital-releases[/skip=20].json
+  // Match on the raw path; the extra segment (e.g. genre=Sci-Fi%20and%20Fantasy&skip=20) is decoded by URLSearchParams.
+  const path = (req.url || "").split("?")[0];
+  // [/<config>]/manifest.json | showcase(-tv).json | catalog/<movie|series>/<id>[/<extra>].json
   const m = path.match(
-    /^(?:\/([^/]+))?\/(manifest\.json|showcase\.json|catalog\/movie\/digital-releases(?:\/(.+))?\.json)$/
+    /^(?:\/([^/]+))?\/(manifest\.json|showcase(?:-tv)?\.json|catalog\/(movie|series)\/([\w-]+)(?:\/(.+))?\.json)$/
   );
   if (!m) return send(res, 404, { error: "Not found" });
 
   const cfg = parseConfig(m[1]);
 
-  if (m[2] === "showcase.json") {
+  if (m[2] === "showcase.json" || m[2] === "showcase-tv.json") {
     if (!cfg.tmdbKey) return send(res, 200, { posters: [] }, "public, max-age=60");
     try {
-      return send(res, 200, await getShowcase(cfg), "public, max-age=600, s-maxage=1800, stale-while-revalidate=3600");
+      return send(res, 200, await getShowcase(cfg, m[2] === "showcase-tv.json" ? "tv" : cfg.mode === "trash" ? "trash" : "movie"), "public, max-age=600, s-maxage=1800, stale-while-revalidate=3600");
     } catch {
       return send(res, 200, { posters: [] }, "public, max-age=60");
     }
   }
 
   if (m[2] === "manifest.json") {
-    return send(res, 200, buildManifest(cfg), "public, max-age=300");
+    return send(res, 200, buildManifest(cfg, m[1]), "public, max-age=300");
   }
 
+  const key = `${m[3]}/${m[4]}`;
+  if (!CATALOGS[key]) return send(res, 404, { metas: [], error: "Unknown catalog" });
+  const isTrashKey = key.startsWith("series/trash-");
+  const trashOn = isTrashKey && cfg.mode === "trash" && cfg.trashParts.includes(key.slice(13));
+  const eff = effective(cfg);
+  const blocked = isTrashKey
+    ? !trashOn
+    : cfg.mode === "trash" || (m[3] === "movie" && !eff.movies) || (m[3] === "series" && !eff.shows);
+  if (blocked) {
+    return send(res, 200, { metas: [] }, "public, max-age=300");
+  }
   if (!cfg.tmdbKey) {
     return send(res, 400, { metas: [], error: "No valid TMDB key in this add-on's settings" });
   }
-  const skip = Number(new URLSearchParams(m[3] || "").get("skip")) || 0;
+  const extra = new URLSearchParams(m[5] || "");
+  const skip = Number(extra.get("skip")) || 0;
+  const genre = extra.get("genre") || "";
   try {
-    const catalog = await getCatalog(cfg, skip);
+    const catalog = await getCatalog(cfg, key, skip, genre);
     return send(res, 200, catalog, "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400");
   } catch (err) {
     console.error(err.message);
