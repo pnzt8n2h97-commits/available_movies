@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digital Releases for Stremio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#0b0716; --card:#150d27; --field:#0d0720; --ink:#12081f; --text:#f6f2ff; --muted:#bdb2de; --line:rgba(255,255,255,.16);
+    --pink:#ff3d81; --orange:#ff7a3d; --sun:#ffd23f; --lime:#b6ff3b; --cyan:#22d3ee; --violet:#8b5cff;
+    --accent:var(--violet); --bad:#ff9a9a;
+    --grad:linear-gradient(120deg,var(--pink),var(--orange) 50%,var(--sun));
+    --grad2:linear-gradient(120deg,var(--violet),var(--cyan));
+    --display:"Unbounded","Arial Black",system-ui,sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"Sora",system-ui,-apple-system,"Segoe UI",sans-serif; line-height:1.55; -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+  a { color:var(--cyan); }
+
+  /* Colour mesh behind everything */
+  .aurora { position:fixed; inset:-15% -10% auto -10%; height:95vh; z-index:-1; pointer-events:none; filter:blur(36px); opacity:.9;
+    background:
+      radial-gradient(38% 46% at 14% 18%, rgba(255,61,129,.60), transparent 70%),
+      radial-gradient(34% 44% at 84% 8%, rgba(139,92,255,.65), transparent 70%),
+      radial-gradient(38% 46% at 62% 72%, rgba(34,211,238,.42), transparent 70%),
+      radial-gradient(30% 40% at 22% 88%, rgba(255,210,63,.34), transparent 70%); }
+  @media (prefers-reduced-motion:no-preference) { .aurora { animation:float 16s ease-in-out infinite alternate; } @keyframes float { to { transform:translate3d(3%,4%,0) scale(1.1); } } }
+
+  .wrap { max-width:1120px; margin:0 auto; padding:0 20px; }
+  header { padding:52px 0 30px; }
+  h1 { font-family:var(--display); font-weight:800; font-size:clamp(1.9rem,6.4vw,4rem); line-height:1.05; letter-spacing:-.025em; margin:0 0 20px; max-width:18ch;
+    color:#fff; background:linear-gradient(100deg,#fff 5%,var(--sun) 38%,var(--pink) 72%,var(--violet)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .lede { color:var(--muted); font-size:1.1rem; max-width:48ch; margin:0; }
+
+  form { max-width:660px; display:grid; gap:22px; padding:28px; border-radius:30px; border:2px solid transparent;
+    background:linear-gradient(var(--card),var(--card)) padding-box, linear-gradient(135deg,var(--pink),var(--violet),var(--cyan)) border-box;
+    box-shadow:0 40px 90px -40px rgba(139,92,255,.75), 0 10px 40px -20px rgba(255,61,129,.6); }
+  label { display:block; font-weight:600; margin-bottom:8px; }
+  .hint { color:var(--muted); font-size:.88rem; margin:8px 0 0; }
+  input, select { width:100%; font:inherit; color:var(--text); background:var(--field); border:1.5px solid var(--line); border-radius:15px; padding:13px 15px; }
+  input::placeholder { color:#80749f; }
+  select option { background:var(--card); color:var(--text); }
+  input:focus-visible, select:focus-visible { border-color:var(--cyan); outline:3px solid rgba(34,211,238,.45); outline-offset:1px; }
+  .btn:focus-visible, .poster:focus-visible, .chip:focus-visible, .tab:focus-visible { outline:3px solid #fff; outline-offset:3px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:520px) { .row { grid-template-columns:1fr; } form { padding:20px; border-radius:24px; } }
+  .err { color:var(--bad); font-size:.88rem; margin:6px 0 0; min-height:1.3em; }
+
+  .tabs { display:flex; gap:6px; padding:5px; border-radius:20px; background:rgba(255,255,255,.07); border:1px solid var(--line); }
+  .tab { flex:1; font-family:var(--display); font-weight:500; font-size:.85rem; padding:13px 12px; border-radius:15px; border:0; background:transparent; color:var(--muted); cursor:pointer; transition:background .15s,color .15s; }
+  .tab:hover { color:var(--text); }
+  .tab[aria-selected="true"] { background:var(--grad); color:var(--ink); font-weight:800; box-shadow:0 8px 24px -8px rgba(255,61,129,.8); }
+
+  .chips { display:flex; flex-wrap:wrap; gap:9px; }
+  .chip { --c:var(--pink); font:inherit; font-size:.9rem; padding:9px 15px; border-radius:999px; cursor:pointer; color:var(--text);
+    border:1.5px solid rgba(255,255,255,.28); background:rgba(255,255,255,.05);
+    border:1.5px solid color-mix(in srgb,var(--c) 65%,transparent); background:color-mix(in srgb,var(--c) 13%,transparent); transition:transform .12s,background .12s; }
+  .chip:nth-child(6n+2) { --c:var(--orange); } .chip:nth-child(6n+3) { --c:var(--sun); } .chip:nth-child(6n+4) { --c:var(--lime); }
+  .chip:nth-child(6n+5) { --c:var(--cyan); } .chip:nth-child(6n) { --c:var(--violet); }
+  .chip:hover { transform:translateY(-2px); }
+  .chip[aria-pressed="true"], .chip[aria-pressed="true"]:hover { background:var(--c); border-color:var(--c); color:var(--ink); font-weight:700; box-shadow:0 8px 22px -6px var(--c); }
+
+  .sw { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 0; border-top:1px solid var(--line); cursor:pointer; }
+  .sw b { display:block; font-weight:600; }
+  .sw small { color:var(--muted); font-size:.85rem; }
+  .sw input { appearance:none; -webkit-appearance:none; flex:0 0 auto; width:52px; height:30px; padding:0; border:0; border-radius:15px; background:rgba(255,255,255,.2); position:relative; cursor:pointer; margin:0; transition:background .15s; }
+  .sw input::after { content:""; position:absolute; top:3px; left:3px; width:24px; height:24px; border-radius:50%; background:#fff; transition:transform .15s; }
+  .sw input:checked { background:var(--grad2); }
+  .sw input:checked::after { transform:translateX(22px); }
+
+  .actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:4px; }
+  .btn { font:inherit; font-weight:700; padding:15px 22px; border-radius:17px; border:1.5px solid transparent; cursor:pointer; text-decoration:none; display:inline-block; transition:transform .12s,box-shadow .12s,background .12s; }
+  .btn:hover { transform:translateY(-2px); }
+  .btn.primary { background:var(--grad); color:var(--ink); font-family:var(--display); font-weight:800; font-size:.95rem; box-shadow:0 14px 34px -10px rgba(255,61,129,.85); }
+  .btn.ghost { background:rgba(255,255,255,.05); color:var(--text); border-color:rgba(255,255,255,.28); }
+  .btn.ghost:hover { background:rgba(255,255,255,.12); border-color:var(--cyan); }
+  .btn[aria-disabled="true"], .btn:disabled { opacity:.4; cursor:not-allowed; transform:none; box-shadow:none; }
+  .check { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+  .check li { display:flex; gap:10px; align-items:flex-start; padding:11px 15px; border-radius:15px; background:rgba(255,255,255,.07); border:1px solid var(--line); font-size:.92rem; }
+  .check b { flex:0 0 auto; }
+  .check .good b { color:var(--lime); }
+  .check .bad b { color:var(--pink); }
+  .url { font-size:.85rem; color:var(--muted); word-break:break-all; margin:0; }
+  .url code { color:var(--cyan); }
+  .warn { font-size:.85rem; color:var(--muted); border-top:1px solid var(--line); padding-top:16px; margin:0; }
+
+  .wall-head { display:flex; justify-content:space-between; align-items:center; margin:48px 0 16px; }
+  .wall-head h2 { font-family:var(--display); font-size:1.25rem; font-weight:800; margin:0; }
+  .wall-head span { color:var(--ink); background:var(--grad2); font-size:.8rem; font-weight:700; padding:3px 12px; border-radius:999px; }
+  .wall-head span:empty { display:none; }
+  .wall { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:16px; padding-bottom:64px; }
+  .poster { --c:var(--pink); display:block; color:inherit; text-decoration:none; border-radius:18px; overflow:hidden; background:var(--card); border:2px solid var(--c); aspect-ratio:2/3; position:relative; transition:transform .18s,box-shadow .18s; }
+  .poster:nth-child(5n+2) { --c:var(--orange); } .poster:nth-child(5n+3) { --c:var(--sun); } .poster:nth-child(5n+4) { --c:var(--cyan); } .poster:nth-child(5n) { --c:var(--violet); }
+  .poster:hover, .poster:focus-visible { transform:translateY(-6px) rotate(-1.2deg); box-shadow:0 22px 44px -12px var(--c); }
+  .poster img { width:100%; height:100%; object-fit:cover; display:block; }
+  .poster .cap { position:absolute; inset:auto 0 0 0; padding:34px 10px 10px; background:linear-gradient(transparent,rgba(11,7,22,.95)); font-size:.85rem; font-weight:600; line-height:1.25; opacity:0; transition:opacity .15s; }
+  .poster:hover .cap, .poster:focus-visible .cap { opacity:1; }
+  @media (hover:none) { .poster .cap { opacity:1; } }
+  .noimg { display:grid; place-items:center; height:100%; padding:12px; text-align:center; color:var(--muted); font-size:.9rem; }
+  .msg { grid-column:1/-1; color:var(--muted); padding:22px; background:rgba(255,255,255,.06); border:1px solid var(--line); border-left:4px solid var(--pink); border-radius:16px; }
+  .skeleton { background:linear-gradient(110deg,rgba(255,255,255,.06) 30%,rgba(255,255,255,.16) 50%,rgba(255,255,255,.06) 70%); background-size:220% 100%; border-radius:18px; aspect-ratio:2/3; }
+  @media (prefers-reduced-motion:no-preference) { .skeleton { animation:shimmer 1.3s linear infinite; } @keyframes shimmer { to { background-position:-220% 0; } } }
+
+  .reel { --gap:14px; display:none; overflow:hidden; height:clamp(160px,28vw,250px); padding-top:18px; box-sizing:content-box;
+    -webkit-mask-image:linear-gradient(90deg,transparent,#000 9%,#000 91%,transparent); mask-image:linear-gradient(90deg,transparent,#000 9%,#000 91%,transparent); }
+  .reel.on { display:block; }
+  .reel .track { display:flex; align-items:center; gap:var(--gap); padding-right:var(--gap); width:max-content; height:100%; }
+  .reel img { --c:var(--pink); height:88%; aspect-ratio:2/3; object-fit:cover; border-radius:16px; background:var(--card); border:2px solid var(--c); box-shadow:0 14px 34px -14px var(--c); user-select:none; pointer-events:none; }
+  .reel img:nth-child(5n+2) { --c:var(--orange); transform:rotate(2deg); } .reel img:nth-child(5n+3) { --c:var(--sun); } .reel img:nth-child(5n+4) { --c:var(--cyan); transform:rotate(-2deg); } .reel img:nth-child(5n) { --c:var(--violet); }
+  @media (prefers-reduced-motion:no-preference) { .reel .track { animation:drift 90s linear infinite; } @keyframes drift { to { transform:translateX(-50%); } } }
+  .reel-tv { padding-top:0; padding-bottom:18px; margin-bottom:8px; }
+  .reel-tv .track { animation-direction:reverse; }
+
+  footer { border-top:1px solid var(--line); padding:24px 0 40px; color:var(--muted); font-size:.85rem; }
+</style>
+</head>
+<body>
+<div class="aurora" aria-hidden="true"></div>
+<div class="reel" id="reel" aria-hidden="true"></div>
+<div class="wrap">
+  <header>
+    <h1>Movies you can rent or buy right now.</h1>
+    <p class="lede">A Stremio catalog that hides anything still stuck in theaters, plus new shows you can stream now. Add your keys, pick a region, and install.</p>
+  </header>
+
+  <form id="form" autocomplete="off" novalidate>
+    <div class="tabs" role="tablist" aria-label="Add-on type">
+      <button type="button" role="tab" class="tab" data-mode="releases" aria-selected="true">Releases</button>
+      <button type="button" role="tab" class="tab" data-mode="trash" aria-selected="false">Trash TV</button>
+    </div>
+    <div>
+      <label for="tmdb">TMDB API key (required)</label>
+      <input id="tmdb" name="tmdb" type="text" spellcheck="false" autocapitalize="off" placeholder="Paste your v3 key or v4 read token">
+      <p class="hint">Free at <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org/settings/api</a>.</p>
+      <p class="err" id="tmdbErr" role="alert"></p>
+    </div>
+    <div>
+      <label for="provider">Poster style</label>
+      <select id="provider">
+        <option value="tmdb">Plain posters (TMDB)</option>
+        <option value="rpdb">Rating posters: RPDB</option>
+        <option value="topposters">Rating posters: Top Posters</option>
+        <option value="custom">Rating posters: ERDB, XRDB, Posters+, Pictorium or other (custom URL)</option>
+      </select>
+    </div>
+    <div id="rpdbBox" hidden>
+      <label for="rpdb">RPDB key</label>
+      <input id="rpdb" name="rpdb" type="text" spellcheck="false" autocapitalize="off" placeholder="Paste your RPDB key">
+      <p class="hint">Prefilled with the free key <code>t0-free-rpdb</code>, which only covers popular titles (others show plain posters). For full coverage, replace it with your own key from <a href="https://ratingposterdb.com" target="_blank" rel="noopener">ratingposterdb.com</a>.</p>
+      <p class="err" id="rpdbErr" role="alert"></p>
+    </div>
+    <div id="topBox" hidden>
+      <label for="top">Top Posters API key</label>
+      <input id="top" name="top" type="text" spellcheck="false" autocapitalize="off" placeholder="Paste your Top Posters API key">
+      <p class="hint">Get a free key by registering at <a href="https://top-posters.com/user/register" target="_blank" rel="noopener">top-posters.com</a> (the free plan includes 10,000 requests a month, and there's no shared demo key). Badge style and language are set in your Top Posters dashboard. If it has no rated poster for a title, the plain poster is shown.</p>
+      <p class="err" id="topErr" role="alert"></p>
+    </div>
+    <div id="customBox" hidden>
+      <label for="tpl">Poster URL pattern</label>
+      <input id="tpl" name="tpl" type="text" spellcheck="false" autocapitalize="off" placeholder="https://your-provider/poster/{imdb_id}.jpg?...">
+      <p class="hint">Open your provider's configurator and copy its poster URL. Replace the movie ID in it with <code>{imdb_id}</code> (or <code>{tmdb_id}</code> if it wants a TMDB ID). Where the URL says movie or tv, use <code>{type}</code> so shows work too. Must start with https://.</p>
+      <p class="hint">Providers: <a href="https://github.com/manuel09/erdb" target="_blank" rel="noopener">ERDB</a>, <a href="https://xrdb.alinvps.duckdns.org/configurator" target="_blank" rel="noopener">XRDB</a>, <a href="https://docs.elfhosted.com/app/postersplus/" target="_blank" rel="noopener">Posters+</a>, <a href="https://store.elfhosted.com/product/pictorium/" target="_blank" rel="noopener">Pictorium</a>. Use the Preview button to check that the posters load.</p>
+      <p class="err" id="tplErr" role="alert"></p>
+    </div>
+    <div class="row" id="regionRow">
+      <div>
+        <label for="region">Region</label>
+        <select id="region">
+          <option value="US">United States</option><option value="GB">United Kingdom</option><option value="CA">Canada</option>
+          <option value="AU">Australia</option><option value="DE">Germany</option><option value="FR">France</option>
+          <option value="ES">Spain</option><option value="IT">Italy</option><option value="NL">Netherlands</option>
+          <option value="SE">Sweden</option><option value="BR">Brazil</option><option value="MX">Mexico</option>
+          <option value="IN">India</option><option value="JP">Japan</option><option value="KR">South Korea</option><option value="TR">Turkey</option>
+        </select>
+      </div>
+      <div id="daysBox">
+        <label for="days">Released within</label>
+        <select id="days">
+          <option value="30">Last 30 days</option><option value="60">Last 60 days</option>
+          <option value="90" selected>Last 90 days</option><option value="180">Last 180 days</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="panel" data-panel="releases">
+      <label id="genreLabel">Genre (optional)</label>
+      <div class="chips" id="chips" role="group" aria-labelledby="genreLabel"></div>
+      <p class="hint">Leave it empty to install everything, with a genre filter inside Stremio. Tap one genre to install just that genre. Want another? Come back, pick a different genre, and install again.</p>
+    </div>
+    <div class="panel" data-panel="releases">
+      <label>What to include</label>
+      <label class="sw" for="optMovies" style="margin:0">
+        <span><b>Movies</b><small>Digitally available releases</small></span>
+        <input id="optMovies" type="checkbox" role="switch" checked>
+      </label>
+      <label class="sw" for="optShows" style="margin:0">
+        <span><b>TV shows</b><small>New shows streaming and new episodes this week</small></span>
+        <input id="optShows" type="checkbox" role="switch" checked>
+      </label>
+      <p class="hint">Every catalog also gets a genre filter inside Stremio.</p>
+    </div>
+    <div class="panel" data-panel="trash" hidden>
+      <label id="trashLabel">What counts as trash</label>
+      <div class="chips" id="trashChips" role="group" aria-labelledby="trashLabel"></div>
+      <p class="hint">Bravo-style reality in its own add-on: franchises like Real Housewives, Below Deck, Vanderpump Rules, Summer House and Love Island. Tap a row to turn it off.</p>
+    </div>
+    <div>
+      <label for="name">Add-on name (optional)</label>
+      <input id="name" name="name" type="text" maxlength="40" autocapitalize="off" placeholder="Digital Releases">
+      <p class="hint">Installing several copies side by side? Give each a different name so you can tell them apart in Stremio.</p>
+    </div>
+
+    <div class="actions">
+      <a class="btn primary" id="install" href="#" aria-disabled="true">Install in Stremio</a>
+      <button class="btn ghost" id="copy" type="button" disabled>Copy add-on link</button>
+      <button class="btn ghost" id="preview" type="button" disabled>Preview catalog</button>
+      <button class="btn ghost" id="check" type="button" disabled>Check my setup</button>
+    </div>
+    <ul class="check" id="checkOut" aria-live="polite" hidden></ul>
+    <p class="url" id="url">Enter your TMDB key to generate the add-on link.</p>
+    <p class="warn">Your keys are stored inside the add-on link so Stremio can use them. Don't share the link publicly. This site doesn't save your keys: it passes them on to TMDB (and your poster provider) to fetch titles, but hosting logs may record the addresses requested, which include your link.</p>
+  </form>
+
+  <div class="wall-head">
+    <h2>Preview</h2>
+    <span id="count"></span>
+  </div>
+  <div style="max-width:420px;margin-bottom:14px">
+    <label for="pvCat" style="font-size:.9rem">Catalog to preview</label>
+    <select id="pvCat">
+      <option value="movie/digital-releases">Movies: digitally available</option>
+      <option value="series/streaming-new">Shows: new and streaming</option>
+      <option value="series/streaming-airing">Shows: new episodes this week</option>
+      <option value="series/trash-bravo">Trash TV: Bravo universe</option>
+      <option value="series/trash-bravonow">Trash TV: Bravo universe, on now</option>
+      <option value="series/trash-reality">Trash TV: reality, on now</option>
+      <option value="series/trash-dating">Trash TV: dating and love shows</option>
+      <option value="series/trash-drama">Trash TV: reality drama</option>
+      <option value="series/trash-daytime">Trash TV: daytime chaos</option>
+      <option value="series/trash-tlc">Trash TV: train wrecks</option>
+      <option value="series/trash-turkish">Trash TV: Turkish dramas</option>
+      <option value="series/trash-novelas">Trash TV: telenovelas</option>
+    </select>
+    <label for="pvGenre" style="font-size:.9rem;display:block;margin-top:10px">Genre (optional)</label>
+    <select id="pvGenre"><option value="">All genres</option></select>
+  </div>
+  <div class="wall" id="wall"><div class="msg">Press "Preview catalog" to see what your settings return.</div></div>
+
+</div>
+<div class="reel reel-tv" id="reelTv" aria-hidden="true"></div>
+<div class="wrap">
+  <footer>Movie data from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB. Streaming availability data comes from JustWatch via TMDB. Rating posters come from the provider you choose. TV schedules from <a href="https://www.tvmaze.com" target="_blank" rel="noopener">TVMaze</a>.</footer>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const KEY_RE = /^[\w.-]+$/;
+  const RPDB_RE = /^[\w-]+$/;
+  let pickedGenre = ""; // "" = general install; otherwise a single-genre install
+  let mode = "releases"; // "releases" or "trash" (the active tab)
+  let trashOn = ["bravo", "bravonow", "reality", "dating", "drama", "daytime", "tlc", "turkish", "novelas"]; // Trash TV rows currently on
+
+  const enc = (o) => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const dec = (s) => JSON.parse(decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/")))));
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // Prefill when opened from Stremio's Configure button (/<config>/configure).
+  const pm = location.pathname.match(/^\/([^/]+)\/configure\/?$/);
+  if (pm) {
+    try {
+      const c = dec(pm[1]);
+      $("tmdb").value = c.tmdbKey || "";
+      $("rpdb").value = c.rpdbKey || "";
+      $("top").value = c.topKey || "";
+      $("tpl").value = c.posterTemplate || "";
+      $("name").value = c.name || "";
+      $("optMovies").checked = c.movies !== false;
+      $("optShows").checked = c.shows !== false;
+      pickedGenre = typeof c.genre === "string" ? c.genre : "";
+      mode = c.mode === "trash" ? "trash" : "releases";
+      if (Array.isArray(c.trashParts)) {
+        const keep = c.trashParts.filter((p) => ["bravo", "bravonow", "reality", "dating", "drama", "daytime", "tlc", "turkish", "novelas"].includes(p));
+        if (keep.length) trashOn = keep;
+      }
+      $("provider").value = c.posterProvider || (c.rpdbKey ? "rpdb" : "tmdb");
+      if (c.region) $("region").value = c.region;
+      if (c.days) $("days").value = String(c.days);
+    } catch {}
+  }
+
+  function state() {
+    const provider = $("provider").value;
+    const tmdb = $("tmdb").value.trim();
+    const rpdb = $("rpdb").value.trim();
+    const top = $("top").value.trim();
+    const tpl = $("tpl").value.trim();
+    const tmdbBad = tmdb && !KEY_RE.test(tmdb);
+    const rpdbBad = provider === "rpdb" && (!rpdb || !RPDB_RE.test(rpdb));
+    const topBad = provider === "topposters" && (!top || !/^[\w.-]+$/.test(top));
+    const tplBad = provider === "custom" && !(/^https:\/\/[\x21-\x7e]+$/.test(tpl) && /\{(imdb_id|tmdb_id)\}/.test(tpl));
+    $("tmdbErr").textContent = tmdbBad ? "Keys can only contain letters, numbers, dots, dashes and underscores." : "";
+    $("rpdbErr").textContent = rpdbBad && rpdb ? "Keys can only contain letters, numbers, dashes and underscores." : "";
+    $("topErr").textContent = topBad && top ? "Keys can only contain letters, numbers, dots, dashes and underscores." : "";
+    $("tplErr").textContent = tplBad && tpl ? "Use an https:// URL with no spaces that includes {imdb_id} or {tmdb_id}." : "";
+    const ok = !!tmdb && !tmdbBad && !rpdbBad && !topBad && !tplBad;
+    const cfg = { tmdbKey: tmdb, posterProvider: provider, region: $("region").value, days: Number($("days").value) };
+    const nm = $("name").value.trim();
+    if (nm) cfg.name = nm;
+    if (mode === "trash") {
+      cfg.mode = "trash";
+      if (trashOn.length < TRASH_PARTS.length) cfg.trashParts = trashOn;
+    } else {
+      if (!$("optMovies").checked) cfg.movies = false;
+      if (!$("optShows").checked) cfg.shows = false;
+      if (pickedGenre) cfg.genre = pickedGenre;
+    }
+    if (provider === "rpdb") cfg.rpdbKey = rpdb;
+    if (provider === "topposters") cfg.topKey = top;
+    if (provider === "custom") cfg.posterTemplate = tpl;
+    const config = enc(cfg);
+    return { ok, config };
+  }
+
+  function update() {
+    syncOptions();
+    $("rpdbBox").hidden = $("provider").value !== "rpdb";
+    $("topBox").hidden = $("provider").value !== "topposters";
+    $("customBox").hidden = $("provider").value !== "custom";
+    const { ok, config } = state();
+    const path = `/${config}/manifest.json`;
+    const install = $("install");
+    install.setAttribute("aria-disabled", String(!ok));
+    install.href = ok ? `stremio://${location.host}${path}` : "#";
+    $("copy").disabled = !ok;
+    $("preview").disabled = !ok;
+    $("check").disabled = !ok;
+    if (ok && reelFor === "") {
+      const tag = $("tmdb").value.trim();
+      clearTimeout(reelTimer);
+      reelTimer = setTimeout(() => {
+        if (reelFor !== "") return;
+        const c = enc({ tmdbKey: tag, region: $("region").value, days: Number($("days").value) });
+        loadTopFor(mode);
+        loadReel(`/${c}/showcase-tv.json`, tag, "reelTv");
+      }, 600);
+    }
+    $("url").innerHTML = ok ? `Add-on link: <code>${esc(location.origin + path)}</code>` : "Enter your TMDB key to generate the add-on link.";
+  }
+
+  ["tmdb", "provider", "rpdb", "top", "tpl", "name", "optMovies", "optShows", "region", "days"].forEach((id) => $(id).addEventListener("input", update));
+  $("pvCat").addEventListener("change", () => { fillGenres(); if (!$("preview").disabled) $("preview").click(); });
+  $("pvGenre").addEventListener("change", () => { if (!$("preview").disabled) $("preview").click(); });
+  // Never allow both switches off: the one just flipped goes back on.
+  ["optMovies", "optShows"].forEach((id) => $(id).addEventListener("change", (e) => {
+    if (!$("optMovies").checked && !$("optShows").checked) e.target.checked = true;
+    update();
+  }));
+
+  // Selecting RPDB prefills the free key if the field is empty.
+  $("provider").addEventListener("change", () => {
+    if ($("provider").value === "rpdb" && !$("rpdb").value.trim()) $("rpdb").value = "t0-free-rpdb";
+    update();
+  });
+  $("install").addEventListener("click", (e) => { if ($("install").getAttribute("aria-disabled") === "true") e.preventDefault(); });
+  $("form").addEventListener("submit", (e) => e.preventDefault());
+
+  $("copy").addEventListener("click", async () => {
+    const { config } = state();
+    try { await navigator.clipboard.writeText(`${location.origin}/${config}/manifest.json`); $("copy").textContent = "Copied"; }
+    catch { $("copy").textContent = "Copy failed. Select the link below."; }
+    setTimeout(() => ($("copy").textContent = "Copy add-on link"), 2000);
+  });
+
+  $("preview").addEventListener("click", () => {
+    const { ok, config } = state();
+    if (!ok) return;
+    const wall = $("wall");
+    $("count").textContent = "";
+    wall.innerHTML = Array.from({ length: 12 }, () => '<div class="skeleton"></div>').join("");
+    fetch(`/${config}/catalog/${$("pvCat").value}${$("pvGenre").value ? "/genre=" + encodeURIComponent($("pvGenre").value) : ""}.json`)
+      .then((r) => r.json().then((j) => { if (!r.ok) throw new Error(j.error || r.status); return j; }))
+      .then(({ metas }) => {
+        if (!metas.length) { wall.innerHTML = '<div class="msg">No titles found for this region and range. Try a longer range.</div>'; return; }
+        $("count").textContent = metas.length + " titles";
+        wall.innerHTML = metas.map((m) => `
+          <a class="poster" href="stremio:///detail/${m.type === "series" ? "series" : "movie"}/${encodeURIComponent(m.id)}" title="${esc(m.name)}">
+            ${m.poster ? `<img src="${esc(m.poster)}" alt="" loading="lazy">` : `<div class="noimg">${esc(m.name)}</div>`}
+            <div class="cap">${esc(m.name)}${m.releaseInfo ? " (" + esc(m.releaseInfo) + ")" : ""}</div>
+          </a>`).join("");
+      })
+      .catch((err) => { wall.innerHTML = `<div class="msg">Couldn't load the catalog: ${esc(err.message)}. Check your keys and try again.</div>`; });
+  });
+
+  // Decorative poster strip: shuffled new digital releases. Not clickable.
+  let reelFor = "", reelTimer, topSeq = 0;
+  const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  function loadReel(path, tag, el = "reel", seq) {
+    fetch(path)
+      .then((r) => (r.ok ? r.json() : { posters: [] }))
+      .then(({ posters }) => {
+        if (seq !== undefined && seq !== topSeq) return; // a newer request replaced this one
+        if (!posters || !posters.length) {
+          if (seq !== undefined) $(el).classList.remove("on");
+          return;
+        }
+        const imgs = shuffle(posters.slice()).slice(0, 20)
+          .map((u) => `<img src="${esc(u)}" alt="" loading="lazy" draggable="false">`).join("");
+        $(el).innerHTML = `<div class="track">${imgs}${imgs}</div>`;
+        $(el).classList.add("on");
+        if (el === "reel") reelFor = tag;
+      })
+      .catch(() => {});
+  }
+  // Works with no input if the site owner set TMDB_KEY on Vercel; otherwise fills in once a key is entered.
+  // Top strip follows the tab: movies on Releases, trash TV on Trash TV.
+  function loadTopFor(m) {
+    const key = $("tmdb").value.trim();
+    const cfg = { region: $("region").value, days: Number($("days").value) };
+    if (key && KEY_RE.test(key)) cfg.tmdbKey = key; // otherwise the server's own key is used, if set
+    if (m === "trash") cfg.mode = "trash";
+    loadReel(`/${enc(cfg)}/showcase.json`, "top-" + m, "reel", ++topSeq);
+  }
+  if (mode === "trash") loadTopFor("trash");
+  else loadReel("/showcase.json", "default");
+  loadReel("/showcase-tv.json", "default", "reelTv");
+
+  // Genre labels match the server's lists (movies and TV use different ones).
+  const GENRES = {
+    movie: ["Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Music", "Mystery", "Romance", "Science Fiction", "Thriller", "War", "Western"],
+    series: ["Action and Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Kids", "Mystery", "Reality", "Sci-Fi and Fantasy", "Soap", "Talk", "War and Politics", "Western"],
+  };
+  function fillGenres() {
+    const kind = $("pvCat").value.split("/")[0];
+    $("pvGenre").innerHTML = '<option value="">All genres</option>' + GENRES[kind].map((g) => `<option>${esc(g)}</option>`).join("");
+  }
+  // Disable preview catalogs and hide strips for anything switched off.
+  function syncOptions() {
+    const { mv, tv } = eff();
+    const sel = $("pvCat");
+    [...sel.options].forEach((o) => {
+      const isTrash = o.value.startsWith("series/trash-");
+      const on = mode === "trash"
+        ? isTrash && trashOn.includes(o.value.slice(13))
+        : !isTrash && (o.value.startsWith("series") ? tv : mv);
+      o.disabled = !on;
+      o.hidden = !on;
+    });
+    if (sel.selectedOptions[0].disabled) {
+      sel.value = [...sel.options].find((o) => !o.disabled).value;
+      fillGenres();
+    }
+    $("reel").style.display = mv || mode === "trash" ? "" : "none";
+    $("reelTv").style.display = tv && mode !== "trash" ? "" : "none";
+    // A picked genre is applied by the add-on itself, so the preview's genre dropdown steps aside.
+    const noPvGenre = !!pickedGenre || mode === "trash";
+    $("pvGenre").disabled = noPvGenre;
+    if (noPvGenre) $("pvGenre").value = "";
+    $("install").textContent = mode === "trash" ? "Install Trash TV" : pickedGenre ? "Install " + pickedGenre : "Install in Stremio";
+    document.querySelectorAll(".panel").forEach((p) => { p.hidden = p.dataset.panel !== mode; });
+    document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.mode === mode)));
+    $("daysBox").hidden = mode === "trash";
+    $("name").placeholder = mode === "trash" ? "Trash TV" : "Digital Releases";
+  }
+  fillGenres();
+
+  // Single-genre installs. Some genres exist only for movies or only for shows (mirrors the server).
+  const PICK = ["Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Kids", "Music", "Mystery", "Reality", "Romance", "Science Fiction", "Thriller", "War", "Western"];
+  const MOVIE_ONLY = ["History", "Horror", "Music", "Romance", "Thriller"];
+  const TV_ONLY = ["Kids", "Reality"];
+  // Trash TV rows (mirrors the server): tap to turn a row off; at least one stays on.
+  const TRASH_PARTS = [["bravo", "Bravo universe"], ["bravonow", "Bravo universe: on now"], ["reality", "Reality: on now"], ["dating", "Dating and love shows"], ["drama", "Reality drama"], ["daytime", "Daytime chaos"], ["tlc", "Train wrecks"], ["turkish", "Turkish dramas"], ["novelas", "Telenovelas"]];
+  function renderTrashChips() {
+    $("trashChips").innerHTML = TRASH_PARTS.map(([id, label]) =>
+      `<button type="button" class="chip" aria-pressed="${trashOn.includes(id)}" data-t="${id}">${esc(label)}</button>`).join("");
+  }
+  $("trashChips").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-t]");
+    if (!b) return;
+    const id = b.dataset.t;
+    if (trashOn.includes(id)) { if (trashOn.length > 1) trashOn = trashOn.filter((x) => x !== id); }
+    else trashOn = TRASH_PARTS.map(([k]) => k).filter((k) => k === id || trashOn.includes(k));
+    renderTrashChips();
+    update();
+    if (!$("preview").disabled) $("preview").click();
+  });
+  document.querySelector(".tabs").addEventListener("click", (e) => {
+    const t = e.target.closest(".tab");
+    if (!t || t.dataset.mode === mode) return;
+    mode = t.dataset.mode;
+    update();
+    loadTopFor(mode);
+    if (!$("preview").disabled) $("preview").click();
+  });
+  renderTrashChips();
+
+  // "Check my setup": the server checks TMDB and TVMaze; poster providers are tested from the browser,
+  // so the server never fetches a URL you typed in.
+  const testImage = (url, ms = 8000) => new Promise((resolve) => {
+    const img = new Image();
+    const t = setTimeout(() => resolve(false), ms);
+    img.onload = () => { clearTimeout(t); resolve(true); };
+    img.onerror = () => { clearTimeout(t); resolve(false); };
+    img.src = url;
+  });
+  function posterTest() {
+    const p = $("provider").value;
+    if (p === "rpdb") return ["RPDB", `https://api.ratingposterdb.com/${$("rpdb").value.trim()}/imdb/poster-default/tt0111161.jpg?fallback=true`];
+    if (p === "topposters") return ["Top Posters", `https://api.top-posters.com/${$("top").value.trim()}/imdb/poster/tt0111161.jpg`];
+    if (p === "custom") return ["Your poster pattern", $("tpl").value.trim().split("{imdb_id}").join("tt0111161").split("{tmdb_id}").join("278").split("{type}").join("movie")];
+    return null;
+  }
+  $("check").addEventListener("click", async () => {
+    const { ok, config } = state();
+    if (!ok) return;
+    const list = $("checkOut");
+    const line = (good, text) => `<li class="${good ? "good" : "bad"}"><b>${good ? "✓" : "✗"}</b><span>${esc(text)}</span></li>`;
+    list.hidden = false;
+    list.innerHTML = "<li><span>Checking...</span></li>";
+    let html = "";
+    try {
+      const j = await (await fetch(`/${config}/check.json`)).json();
+      html += line(j.tmdb.ok, j.tmdb.message);
+      if (mode === "trash") html += line(j.tvmaze.ok, j.tvmaze.message);
+    } catch {
+      html += line(false, "Couldn't reach your add-on's server.");
+    }
+    const pt = posterTest();
+    if (pt) {
+      const good = await testImage(pt[1]);
+      html += line(good, good ? pt[0] + " posters load" : pt[0] + " posters didn't load. Check the key or pattern.");
+    }
+    list.innerHTML = html;
+  });
+
+  function eff() {
+    if (mode === "trash") return { mv: false, tv: true };
+    const g = pickedGenre;
+    let mv = $("optMovies").checked && !TV_ONLY.includes(g);
+    let tv = $("optShows").checked && !MOVIE_ONLY.includes(g);
+    if (!mv && !tv && g) { mv = !TV_ONLY.includes(g); tv = !MOVIE_ONLY.includes(g); }
+    return { mv, tv };
+  }
+  function renderChips() {
+    $("chips").innerHTML = PICK.map((g) =>
+      `<button type="button" class="chip" aria-pressed="${g === pickedGenre}" data-g="${esc(g)}">${esc(g)}</button>`).join("");
+  }
+  // Tap a genre to pick it; tap it again to go back to the general install.
+  $("chips").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-g]");
+    if (!b) return;
+    pickedGenre = pickedGenre === b.dataset.g ? "" : b.dataset.g;
+    renderChips();
+    update();
+    if (!$("preview").disabled) $("preview").click();
+  });
+  renderChips();
+
+  update();
+</script>
+</body>
+</html>
