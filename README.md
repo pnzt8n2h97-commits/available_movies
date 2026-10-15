@@ -14,13 +14,19 @@ To install just one genre, tap it on the install page (for example Comedy). That
 
 ## Trash TV
 
-The install page has a second tab, **Trash TV**. It installs its own separate add-on (not a genre of the main one) with Bravo-style reality TV in three rows:
+The install page has a second tab, **Trash TV**. It installs its own separate add-on (not a genre of the main one) with nine rows of trashy TV:
 
-- **Bravo Universe:** popular shows from franchises like Real Housewives, Below Deck, Vanderpump Rules, Summer House, Southern Charm, Married to Medicine, Million Dollar Listing, Love Island, Love Is Blind, Too Hot to Handle, Selling Sunset, The Bachelor, 90 Day Fiance and Jersey Shore.
-- **Bravo Universe: On Now:** the same franchises, limited to shows with an episode in the last 14 days.
-- **Reality: On Now:** US reality shows with an episode in the last 14 days.
+- **Bravo Universe:** popular shows from franchises like Real Housewives, Below Deck, Vanderpump Rules, Summer House and Southern Charm.
+- **Bravo Universe: On Now:** shows that aired on Bravo in the last 7 days (from TVMaze's real TV schedule), plus those franchises airing elsewhere, such as on streaming.
+- **Reality: On Now:** US reality shows that aired in the last 7 days, from TVMaze's schedule. If TVMaze is slow or down, both On Now rows fall back to TMDB (episodes in the last 14 days).
+- **Dating and Love Shows:** Love Island, Love Is Blind, Too Hot to Handle, The Bachelor, Temptation Island, Married at First Sight and more.
+- **Reality Drama:** Jersey Shore, Teen Mom, Dance Moms, Love & Hip Hop, Basketball Wives, The Kardashians, Catfish and more.
+- **Daytime Chaos:** Jerry Springer, Maury, Dr. Phil, Judge Judy, Divorce Court and more.
+- **Train Wrecks:** My 600-lb Life, Hoarders, Dr. Pimple Popper, Sister Wives, Toddlers & Tiaras and more.
+- **Turkish Dramas:** Turkish-language dramas made in Turkey.
+- **Telenovelas:** Spanish-language soaps.
 
-Franchises are matched by show name (see `FRANCHISES` in `api/index.js`), so you can add or remove names there. Tap a row to turn it off. It can be installed alongside the Releases add-on.
+Most rows are matched by show name (see `FRANCHISES` and `GROUPS` in `api/index.js`), so you can add or remove names there. Tap a row to turn it off. It can be installed alongside the Releases add-on.
 
 ## Deploy your own
 
@@ -74,6 +80,7 @@ Your settings, including your keys, are encoded in the add-on link so Stremio ca
 ## Credits
 
 - Rating posters from [Top Posters](https://top-posters.com) when you choose it.
+- TV schedules from [TVMaze](https://www.tvmaze.com), licensed CC BY-SA 4.0. It's free and needs no key, with a limit of about 20 calls per 10 seconds, so results are cached.
 - Movie and TV data from [TMDB](https://www.themoviedb.org). This product uses the TMDB API but is not endorsed or certified by TMDB.
 - Streaming availability data comes from JustWatch via TMDB.
 - Rating posters from [RPDB](https://ratingposterdb.com) or the provider you choose.

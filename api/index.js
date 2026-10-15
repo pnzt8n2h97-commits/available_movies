@@ -150,15 +150,47 @@ const CATALOGS = {
   }),
 };
 
-// "Trash TV" is its own add-on mode: Bravo-style reality (Real Housewives, Below Deck, Vanderpump Rules...),
-// not a genre of the main one. Franchises are matched by name, so no TMDB network ids are needed.
+// "Trash TV" is its own add-on mode: Bravo-style and far trashier reality (dating shows, reality drama, daytime
+// chaos, train wrecks, Turkish dramas, telenovelas), not a genre of the main one.
+// Franchises are matched by show name, so no TMDB network ids are needed. Edit these lists freely.
 const FRANCHISES = [
   "Real Housewives", "Below Deck", "Vanderpump Rules", "Summer House", "Southern Charm",
   "Married to Medicine", "Million Dollar Listing", "Love Island", "Love Is Blind",
   "Too Hot to Handle", "Selling Sunset", "The Bachelor", "90 Day Fiance", "Jersey Shore",
 ];
-const normName = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-const matchesFranchise = (name) => FRANCHISES.some((f) => normName(name).includes(normName(f)));
+const GROUPS = {
+  dating: [
+    "Love Island", "Love Is Blind", "Too Hot to Handle", "The Bachelor", "Bachelor in Paradise",
+    "Temptation Island", "Perfect Match", "The Ultimatum", "Married at First Sight", "Love After Lockup",
+    "FBoy Island", "Are You the One", "Ex on the Beach", "Dated and Related", "Naked Attraction",
+  ],
+  drama: [
+    "Jersey Shore", "Geordie Shore", "Siesta Key", "Floribama Shore", "Teen Mom", "16 and Pregnant",
+    "Dance Moms", "Love & Hip Hop", "Basketball Wives", "Mob Wives", "Growing Up Hip Hop",
+    "Braxton Family Values", "The Kardashians", "Keeping Up with the Kardashians", "Catfish",
+    "The Challenge", "Big Brother",
+  ],
+  daytime: [
+    "The Jerry Springer Show", "Maury", "The Steve Wilkos Show", "Dr. Phil", "Ricki Lake", "Judge Judy",
+    "Judge Mathis", "Divorce Court", "The Jeremy Kyle Show", "Trisha", "Wife Swap", "Hot Bench",
+  ],
+  tlc: [
+    "My 600-lb Life", "Hoarders", "Dr. Pimple Popper", "Sister Wives", "Toddlers & Tiaras",
+    "Here Comes Honey Boo Boo", "Counting On", "19 Kids and Counting", "Welcome to Plathville",
+    "Extreme Cheapskates", "Say Yes to the Dress", "The Bad Girls Club",
+  ],
+};
+const normName = (s) =>
+  String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/&/g, " and ").replace(/\s+/g, " ").trim();
+const matcher = (names) => {
+  const n = names.map(normName);
+  return (name) => {
+    const x = normName(name);
+    return n.some((f) => x.includes(f));
+  };
+};
+const matchesFranchise = matcher(FRANCHISES);
 const keyHash = (k) => crypto.createHash("sha1").update(String(k)).digest("hex").slice(0, 10);
 
 // Tiny in-memory cache (per warm serverless instance) so paging doesn't repeat many TMDB calls.
@@ -172,24 +204,31 @@ async function memoized(key, ttlMs, fn) {
   return val;
 }
 
-// All matching shows, found by searching each franchise name; most popular first.
-function franchiseShows(cfg) {
-  return memoized("fr:" + keyHash(cfg.tmdbKey), 600000, async () => {
-    const lists = await Promise.all(
-      FRANCHISES.map((f) =>
-        tmdb(cfg.tmdbKey, "/search/tv", { query: f, include_adult: "false" })
-          .then((d) => d.results.filter((m) => matchesFranchise(m.name)).slice(0, 6))
-          .catch(() => [])
-      )
-    );
-    const seen = new Set();
-    return lists
-      .flat()
-      .filter((m) => !seen.has(m.id) && seen.add(m.id))
-      .sort((a, b) => b.popularity - a.popularity)
-      .slice(0, 60);
-  });
-}
+// Builds a list from searching each franchise name; keeps only name matches, most popular first.
+const searchList = (id, names) => {
+  const match = matcher(names);
+  return (cfg) =>
+    memoized(`${id}:` + keyHash(cfg.tmdbKey), 600000, async () => {
+      const lists = await Promise.all(
+        names.map((f) =>
+          tmdb(cfg.tmdbKey, "/search/tv", { query: f, include_adult: "false" })
+            .then((d) => d.results.filter((m) => match(m.name)).slice(0, 6))
+            .catch(() => [])
+        )
+      );
+      const seen = new Set();
+      return lists
+        .flat()
+        .filter((m) => !seen.has(m.id) && seen.add(m.id))
+        .sort((a, b) => b.popularity - a.popularity)
+        .slice(0, 60);
+    });
+};
+const franchiseShows = searchList("fr", FRANCHISES);
+const datingShows = searchList("dating", GROUPS.dating);
+const dramaShows = searchList("drama", GROUPS.drama);
+const daytimeShows = searchList("daytime", GROUPS.daytime);
+const tlcShows = searchList("tlc", GROUPS.tlc);
 
 // US reality shows with an episode in the last 14 days, filtered down to those franchises.
 function franchiseOnNow(cfg) {
@@ -213,22 +252,133 @@ function franchiseOnNow(cfg) {
   });
 }
 
+// ---- TVMaze: real TV schedules (free, no key; CC BY-SA, so the page credits TVMaze) ----
+// Used for the two "On Now" rows. If TVMaze is slow, rate-limited or down, those rows fall back to TMDB.
+async function tvmazeGet(path) {
+  const res = await fetch(`https://api.tvmaze.com${path}`, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`TVMaze error ${res.status}`);
+  return res.json();
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const byPopularity = (a, b) => (b.popularity || 0) - (a.popularity || 0);
+
+// Shows that aired in the last 7 days on US broadcast TV or on streaming, most popular first.
+// 14 requests in two bursts keeps us under TVMaze's ~20 calls per 10 seconds; the result is cached.
+function tvmazeRecent() {
+  return memoized("tvmaze:recent", 1800000, async () => {
+    const jobs = [];
+    for (let i = 0; i < 7; i++) {
+      const d = daysAgo(i);
+      jobs.push(`/schedule?country=US&date=${d}`);
+      jobs.push(`/schedule/web?date=${d}&country=US`);
+    }
+    const lists = [];
+    for (let i = 0; i < jobs.length; i += 7) {
+      lists.push(...(await Promise.all(jobs.slice(i, i + 7).map((j) => tvmazeGet(j).catch(() => [])))));
+      if (i + 7 < jobs.length) await sleep(1100);
+    }
+    const byId = new Map();
+    for (const list of lists) {
+      for (const ep of Array.isArray(list) ? list : []) {
+        const show = ep.show || (ep._embedded && ep._embedded.show);
+        if (!show || !show.id || byId.has(show.id)) continue;
+        const img = show.image && (show.image.medium || show.image.original);
+        byId.set(show.id, {
+          id: show.id,
+          name: show.name,
+          imdbId: show.externals && show.externals.imdb,
+          posterUrl: img ? String(img).replace(/^http:/, "https:") : undefined,
+          overview: String(show.summary || "").replace(/<[^>]*>/g, "").trim(),
+          first_air_date: show.premiered,
+          popularity: show.weight || 0,
+          type: String(show.type || "").toLowerCase(),
+          language: show.language,
+          network: (show.network && show.network.name) || (show.webChannel && show.webChannel.name) || "",
+          country: show.network && show.network.country && show.network.country.code,
+        });
+      }
+    }
+    if (!byId.size) throw new Error("TVMaze returned no shows"); // throwing means this isn't cached
+    return [...byId.values()];
+  });
+}
+
+// TMDB version of "US reality airing lately" (used as the fallback and as the base for the Bravo filter).
+function tmdbRealityOnNow(cfg) {
+  return memoized("rnow:" + keyHash(cfg.tmdbKey), 600000, async () => {
+    const pages = await Promise.all(
+      [1, 2, 3].map((page) =>
+        tmdb(cfg.tmdbKey, "/discover/tv", {
+          with_genres: "10764", // Reality
+          with_origin_country: "US",
+          "air_date.gte": daysAgo(14),
+          "air_date.lte": today(),
+          sort_by: "popularity.desc",
+          page: String(page),
+        })
+      )
+    );
+    const seen = new Set();
+    return pages.flatMap((d) => d.results).filter((m) => !seen.has(m.id) && seen.add(m.id));
+  });
+}
+
+// Bravo's own recent shows plus reality franchises airing elsewhere (e.g. streaming).
+async function bravoOnNow(cfg) {
+  const shows = await tvmazeRecent().catch(() => []);
+  const list = shows
+    .filter((x) => x.imdbId && (x.network === "Bravo" || (x.type === "reality" && matchesFranchise(x.name))))
+    .sort(byPopularity);
+  return list.length ? list : franchiseOnNow(cfg);
+}
+async function realityOnNow(cfg) {
+  const shows = await tvmazeRecent().catch(() => []);
+  const list = shows
+    .filter((x) => x.imdbId && x.type === "reality" && (x.country === "US" || x.language === "English"))
+    .sort(byPopularity)
+    .slice(0, 60);
+  return list.length ? list : tmdbRealityOnNow(cfg);
+}
+
 const TRASH = {
   bravo: { name: "Bravo Universe" },
   bravonow: { name: "Bravo Universe: On Now" },
   reality: { name: "Reality: On Now" },
+  dating: { name: "Dating and Love Shows" },
+  drama: { name: "Reality Drama" },
+  daytime: { name: "Daytime Chaos" },
+  tlc: { name: "Train Wrecks" },
+  turkish: { name: "Turkish Dramas" },
+  novelas: { name: "Telenovelas" },
 };
 // "custom" rows are hand-built lists; the others are plain TMDB discover queries.
 CATALOGS["series/trash-bravo"] = () => ({ kind: "tv", custom: franchiseShows });
-CATALOGS["series/trash-bravonow"] = () => ({ kind: "tv", custom: franchiseOnNow });
-CATALOGS["series/trash-reality"] = () => ({
+CATALOGS["series/trash-bravonow"] = () => ({ kind: "tv", custom: bravoOnNow });
+CATALOGS["series/trash-reality"] = () => ({ kind: "tv", custom: realityOnNow });
+CATALOGS["series/trash-dating"] = () => ({ kind: "tv", custom: datingShows });
+CATALOGS["series/trash-drama"] = () => ({ kind: "tv", custom: dramaShows });
+CATALOGS["series/trash-daytime"] = () => ({ kind: "tv", custom: daytimeShows });
+CATALOGS["series/trash-tlc"] = () => ({ kind: "tv", custom: tlcShows });
+// Turkish dizi: made in Turkey, in Turkish, tagged Drama or Soap.
+CATALOGS["series/trash-turkish"] = () => ({
   kind: "tv",
   path: "/discover/tv",
   params: {
-    with_genres: "10764", // Reality
-    with_origin_country: "US",
-    "air_date.gte": daysAgo(14),
-    "air_date.lte": today(),
+    with_origin_country: "TR",
+    with_original_language: "tr",
+    with_genres: "18|10766",
+    "vote_count.gte": "5",
+    sort_by: "popularity.desc",
+  },
+});
+// Telenovelas: Spanish-language soaps.
+CATALOGS["series/trash-novelas"] = () => ({
+  kind: "tv",
+  path: "/discover/tv",
+  params: {
+    with_original_language: "es",
+    with_genres: "10766", // Soap
+    "vote_count.gte": "5",
     sort_by: "popularity.desc",
   },
 });
@@ -237,7 +387,7 @@ function buildTrashManifest(cfg, cfgKey) {
   const suffix = "." + crypto.createHash("sha1").update(cfgKey || "").digest("hex").slice(0, 8);
   return {
     id: "community.trash-tv" + suffix,
-    version: "1.5.0",
+    version: "1.6.0",
     name: cfg.name || "Trash TV",
     description: "Bravo-style reality TV: Real Housewives, Below Deck, Vanderpump Rules and more.",
     resources: ["catalog"],
@@ -314,13 +464,14 @@ async function getImdbId(key, kind, tmdbId) {
 
 // Falls back to the plain TMDB poster whenever the chosen provider isn't fully configured.
 function posterUrl(cfg, imdb, m, kind) {
+  const plain = m.poster_path ? `${IMG}/w342${m.poster_path}` : m.posterUrl; // TMDB, or TVMaze for schedule rows
   if (cfg.posterProvider === "rpdb" && cfg.rpdbKey) {
     // fallback=true makes RPDB return the plain poster if it has no rated version.
     return `https://api.ratingposterdb.com/${cfg.rpdbKey}/imdb/poster-default/${imdb}.jpg?fallback=true`;
   }
   if (cfg.posterProvider === "topposters" && cfg.topKey) {
     // fallback_url makes Top Posters redirect to the plain TMDB poster if it has no rated one.
-    const q = m.poster_path ? `?fallback_url=${encodeURIComponent(`${IMG}/w342${m.poster_path}`)}` : "";
+    const q = plain ? `?fallback_url=${encodeURIComponent(plain)}` : "";
     return `https://api.top-posters.com/${cfg.topKey}/imdb/poster/${imdb}.jpg${q}`;
   }
   if (cfg.posterProvider === "custom" && cfg.posterTemplate) {
@@ -329,7 +480,7 @@ function posterUrl(cfg, imdb, m, kind) {
       .split("{tmdb_id}").join(String(m.id))
       .split("{type}").join(kind); // "movie" or "tv"
   }
-  return m.poster_path ? `${IMG}/w342${m.poster_path}` : undefined;
+  return plain;
 }
 
 async function getCatalog(cfg, key, skip, genre) {
@@ -353,7 +504,7 @@ async function getCatalog(cfg, key, skip, genre) {
 
   const metas = await Promise.all(
     results.map(async (m) => {
-      const imdb = await getImdbId(cfg.tmdbKey, def.kind, m.id);
+      const imdb = m.imdbId || (await getImdbId(cfg.tmdbKey, def.kind, m.id));
       if (!imdb) return null;
       const date = m.release_date || m.first_air_date;
       return {
@@ -377,7 +528,7 @@ async function getShowcase(cfg, kind) {
     kind === "tv"
       ? [["series/streaming-new", 1], ["series/streaming-new", 2], ["series/streaming-airing", 1]]
       : kind === "trash"
-      ? [["series/trash-bravo", 1], ["series/trash-bravonow", 1], ["series/trash-reality", 1], ["series/trash-reality", 2]]
+      ? [["series/trash-bravo", 1], ["series/trash-dating", 1], ["series/trash-reality", 1], ["series/trash-turkish", 1], ["series/trash-novelas", 1]]
       : [["movie/digital-releases", 1], ["movie/digital-releases", 2]];
   const lists = await Promise.all(
     sources.map(async ([key, page]) => {
@@ -389,8 +540,8 @@ async function getShowcase(cfg, kind) {
   );
   const posters = lists
     .flat()
-    .filter((m) => m.poster_path)
-    .map((m) => `${IMG}/w342${m.poster_path}`);
+    .filter((m) => m.poster_path || m.posterUrl)
+    .map((m) => (m.poster_path ? `${IMG}/w342${m.poster_path}` : m.posterUrl));
   return { posters: [...new Set(posters)] };
 }
 
