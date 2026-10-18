@@ -28,6 +28,8 @@ The install page has a third tab, **Turkish TV**, with its own add-on. It has th
 - **Turkish Series:** Turkish-language dramas (Drama genre, with a minimum vote count so obscure titles don't dominate).
 - **Turkish Reality:** Turkish reality shows, topped up with recent Turkish reality from TVMaze's schedule because TMDB alone has few.
 
+**Layout:** choose **separate rows** (the default, one per pick) or **one combined row**. Stremio rows hold a single kind of thing, so a combined layout makes one row for movies and one for series, with reality grouped into series.
+
 Turkish TV is always about Turkey, so the region setting doesn't apply. Turkish Dramas used to be a row on Trash TV; it now lives here.
 
 ## Trash TV
@@ -48,6 +50,33 @@ The install page has a second tab, **Trash TV**. It installs its own separate ad
 **Smarter rows:** the On Now rows are topped up with recent and popular shows when a quiet part of the season would leave them thin. The franchise rows (Bravo Universe, Dating and Love Shows, Reality Drama, Daytime Chaos, Train Wrecks) and the On Now rows are sorted by a guilty-pleasure score: shows that are hugely watched but not well rated come first. Turkish Dramas and Telenovelas stay in plain popularity order.
 
 Most rows are matched by show name (see `FRANCHISES` and `GROUPS` in `api/index.js`), so you can add or remove names there. Install every row together (the default), or tap any number of rows to pick them. Choose **one combined row** (the picks are mixed into a single row, taking shows from each in turn) or **separate rows** (the default, one per pick). Each choice gets its own name (for example "Trash TV: Dating and Love Shows + Turkish Dramas"), so you can stack several side by side. It can also be installed alongside the Releases add-on.
+
+## Documentaries
+
+Eight rows in all. (TMDB has no separate nature, science or sport genres, so those styles aren't offered; they could be added through TMDB keywords if you want them.)
+
+The install page has a fourth tab, **Documentaries**, with its own add-on and four separate rows, each picked or left out with the chips:
+
+- **Documentary Movies:** documentary films, with a minimum vote count so obscure titles don't dominate.
+- **Documentary Series:** documentary series.
+- **True Crime Series:** series tagged both Crime and Documentary (TMDB's "both genres" filter).
+- **True Crime Movies:** films tagged both Crime and Documentary.
+- **History Documentaries:** documentary films tagged History.
+- **Music Documentaries:** documentary films tagged Music.
+- **War Documentaries:** documentary films tagged War.
+- **War and Politics Documentary Series:** documentary series tagged War and Politics.
+
+**Layout:** choose **separate rows** (the default) or **one combined row**. As on Turkish TV, a combined layout makes one movies row and one series row, so documentary and true crime titles are mixed within each type.
+
+Documentaries don't depend on region, so the region setting is hidden on this tab.
+
+## Everything
+
+The **Everything** tab installs every row from Releases, Trash TV, Turkish TV and Documentaries as one add-on. Tick the rows you want and use the Top, Bottom and arrow buttons, or drag a row by its handle (⋮⋮), to set the order Stremio shows them in. Unticked rows are left out, and **Reset everything** puts the whole page back to its defaults: the Everything order and ticks, plus every tab's picks, layouts and switches. Because it's one add-on, it's the simplest way to get everything at once, but it's a lot of rows, so untick what you don't need.
+
+**It follows each tab's layout.** If a tab is set to one combined row, Everything shows that tab's combined row(s) in its place, and the separate rows for that tab disappear from the list. If a tab is set to separate rows, its separate rows appear as usual. Combined rows only show for the types you picked on that tab. Each tab's picks are carried into the Everything install too.
+
+Releases uses its three rows in either layout, since its combined layout is those same rows. Its separate-per-genre layout (one row per genre) isn't brought into Everything, because that would be dozens of rows.
 
 ## Deploy your own
 

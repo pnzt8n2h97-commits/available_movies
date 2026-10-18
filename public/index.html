@@ -81,6 +81,17 @@
   .btn.ghost { background:rgba(255,255,255,.05); color:var(--text); border-color:rgba(255,255,255,.28); }
   .btn.ghost:hover { background:rgba(255,255,255,.12); border-color:var(--cyan); }
   .btn[aria-disabled="true"], .btn:disabled { opacity:.4; cursor:not-allowed; transform:none; box-shadow:none; }
+  .order { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+  .order li { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-radius:15px; background:rgba(255,255,255,.06); border:1px solid var(--line); }
+  .order label { display:flex; align-items:center; gap:10px; margin:0; font-weight:600; cursor:pointer; }
+  .order small { color:var(--muted); font-weight:400; margin-left:6px; }
+  .order .mv { display:flex; gap:6px; }
+  .order .mv button { font:inherit; padding:6px 11px; border-radius:11px; border:1px solid var(--line); background:transparent; color:var(--text); cursor:pointer; }
+  .order .mv button:disabled { opacity:.35; cursor:default; }
+  .order .grip { cursor:grab; touch-action:none; user-select:none; color:var(--muted); font-size:1.15rem; letter-spacing:-2px; padding:0 4px; }
+  .order li.dragging { opacity:.5; }
+  .order li.drop { outline:2px dashed var(--cyan); outline-offset:3px; }
+  .order input[type=checkbox] { width:20px; height:20px; accent-color:var(--pink); flex:0 0 auto; }
   .check { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
   .check li { display:flex; gap:10px; align-items:flex-start; padding:11px 15px; border-radius:15px; background:rgba(255,255,255,.07); border:1px solid var(--line); font-size:.92rem; }
   .check b { flex:0 0 auto; }
@@ -131,9 +142,11 @@
 
   <form id="form" autocomplete="off" novalidate>
     <div class="tabs" role="tablist" aria-label="Add-on type">
-      <button type="button" role="tab" class="tab" data-mode="releases" aria-selected="true">Releases</button>
+      <button type="button" role="tab" class="tab" data-mode="releases" aria-selected="true">Movies and Shows</button>
       <button type="button" role="tab" class="tab" data-mode="trash" aria-selected="false">Trash TV</button>
       <button type="button" role="tab" class="tab" data-mode="turkish" aria-selected="false">Turkish TV</button>
+      <button type="button" role="tab" class="tab" data-mode="docs" aria-selected="false">Documentaries</button>
+      <button type="button" role="tab" class="tab" data-mode="all" aria-selected="false">Everything</button>
     </div>
     <div>
       <label for="tmdb">TMDB API key (required)</label>
@@ -216,7 +229,20 @@
     <div class="panel" data-panel="turkish" hidden>
       <label id="turkLabel">What to include</label>
       <div class="chips" id="turkChips" role="group" aria-labelledby="turkLabel"></div>
-      <p class="hint">Turkish movies, series and reality, each as its own row. Leave it empty to install all three. Tap rows to pick some, and tap again to remove. Want another? Come back, pick different rows, and install again.</p>
+      <div class="chips" id="layTurk" role="group" aria-label="Row layout"></div>
+      <p class="hint">Choose separate rows, or one combined row per type (Stremio rows hold one kind of thing, so movies and series can't share a row). Leave it empty to install all three. Tap rows to pick some, and tap again to remove. Want another? Come back, pick different rows, and install again.</p>
+    </div>
+    <div class="panel" data-panel="docs" hidden>
+      <label id="docLabel">What to include</label>
+      <div class="chips" id="docChips" role="group" aria-labelledby="docLabel"></div>
+      <div class="chips" id="layDocs" role="group" aria-label="Row layout"></div>
+      <p class="hint">Choose separate rows, or one combined row per type (Stremio rows hold one kind of thing, so movies and series can't share a row). Leave it empty to install all eight rows. Tap rows to pick some, and tap again to remove. Want another? Come back, pick different rows, and install again.</p>
+    </div>
+    <div class="panel" data-panel="all" hidden>
+      <label id="allLabel">Rows, in order</label>
+      <ol class="order" id="allList" aria-labelledby="allLabel"></ol>
+      <div class="actions"><button class="btn ghost" id="allReset" type="button">Reset everything</button></div>
+      <p class="hint">Every row from Releases, Trash TV, Turkish TV and Documentaries in one add-on. Tick the rows you want and use the arrows to set the order Stremio shows them in. Unticked rows are left out. That's a lot of rows, so untick any you don't need.</p>
     </div>
     <div>
       <label for="name">Add-on name (optional)</label>
@@ -245,9 +271,21 @@
       <option value="movie/digital-releases">Movies: digitally available</option>
       <option value="series/streaming-new">Shows: new and streaming</option>
       <option value="series/streaming-airing">Shows: new episodes this week</option>
+      <option value="movie/turkish-mix-movies">Turkish TV: one row, movies</option>
+      <option value="series/turkish-mix-series">Turkish TV: one row, series</option>
+      <option value="movie/docs-mix-movies">Documentaries: one row, movies</option>
+      <option value="series/docs-mix-series">Documentaries: one row, series</option>
       <option value="movie/turkish-movies">Turkish TV: movies</option>
       <option value="series/turkish-series">Turkish TV: series</option>
       <option value="series/turkish-reality">Turkish TV: reality</option>
+      <option value="movie/docs-movies">Documentaries: movies</option>
+      <option value="series/docs-series">Documentaries: series</option>
+      <option value="series/crime-series">Documentaries: true crime series</option>
+      <option value="movie/crime-movies">Documentaries: true crime movies</option>
+      <option value="movie/docs-history">Documentaries: history movies</option>
+      <option value="movie/docs-music">Documentaries: music movies</option>
+      <option value="movie/docs-war">Documentaries: war movies</option>
+      <option value="series/docs-war-series">Documentaries: war and politics series</option>
       <option value="series/trash-mix">Trash TV: one combined row</option>
       <option value="series/trash-bravo">Trash TV: Bravo universe</option>
       <option value="series/trash-bravonow">Trash TV: Bravo universe, on now</option>
@@ -282,6 +320,12 @@
   let pickedTrash = []; // Trash TV rows picked (empty = every row)
   let layoutTrash = "each"; // "each" = a row per pick, "one" = one combined row
   let pickedTurk = []; // Turkish TV rows picked (empty = all three)
+  let pickedDocs = []; // Documentaries rows picked (empty = all four)
+  let layoutTurk = "each"; // "one" = one combined row per type, "each" = separate rows
+  let layoutDocs = "each";
+  let allOrder = []; // every Everything row key, in the order to install them
+  let allOn = []; // the ticked keys, in order (unticked rows are left out)
+  let prefillAll = null; // rows from an install link, applied once the row list exists
 
   const enc = (o) => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const dec = (s) => JSON.parse(decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/")))));
@@ -301,10 +345,14 @@
       $("optShows").checked = c.shows !== false;
       pickedGenres = (Array.isArray(c.genres) ? c.genres : [c.genre]).filter((g) => typeof g === "string");
       layoutRel = c.layout === "each" ? "each" : "one";
-      mode = c.mode === "trash" ? "trash" : c.mode === "turkish" ? "turkish" : "releases";
+      mode = c.mode === "trash" ? "trash" : c.mode === "turkish" ? "turkish" : c.mode === "docs" ? "docs" : c.mode === "all" ? "all" : "releases";
+      prefillAll = Array.isArray(c.allRows) ? c.allRows.filter((k) => typeof k === "string") : null;
       pickedTrash = Array.isArray(c.trashParts) && c.trashParts.length < 8 ? c.trashParts.filter((p) => typeof p === "string") : [];
       layoutTrash = c.layout === "one" ? "one" : "each";
       pickedTurk = Array.isArray(c.turkishParts) && c.turkishParts.length < 3 ? c.turkishParts.filter((p) => typeof p === "string") : [];
+      pickedDocs = Array.isArray(c.docsParts) && c.docsParts.length < 8 ? c.docsParts.filter((p) => typeof p === "string") : [];
+      layoutTurk = c.layout === "one" ? "one" : "each";
+      layoutDocs = c.layout === "one" ? "one" : "each";
       $("provider").value = c.posterProvider || (c.rpdbKey ? "rpdb" : "tmdb");
       if (c.region) $("region").value = c.region;
       if (c.days) $("days").value = String(c.days);
@@ -325,7 +373,7 @@
     $("rpdbErr").textContent = rpdbBad && rpdb ? "Keys can only contain letters, numbers, dashes and underscores." : "";
     $("topErr").textContent = topBad && top ? "Keys can only contain letters, numbers, dots, dashes and underscores." : "";
     $("tplErr").textContent = tplBad && tpl ? "Use an https:// URL with no spaces that includes {imdb_id} or {tmdb_id}." : "";
-    const ok = !!tmdb && !tmdbBad && !rpdbBad && !topBad && !tplBad;
+    const ok = !!tmdb && !tmdbBad && !rpdbBad && !topBad && !tplBad && !(mode === "all" && !allRowsNow().length);
     const cfg = { tmdbKey: tmdb, posterProvider: provider, region: $("region").value, days: Number($("days").value) };
     const nm = $("name").value.trim();
     if (nm) cfg.name = nm;
@@ -336,6 +384,17 @@
     } else if (mode === "turkish") {
       cfg.mode = "turkish";
       if (pickedTurk.length && pickedTurk.length < 3) cfg.turkishParts = pickedTurk.slice();
+      if (layoutTurk === "one") cfg.layout = "one";
+    } else if (mode === "all") {
+      cfg.mode = "all";
+      cfg.allRows = allRowsNow();
+      if (pickedTrash.length && pickedTrash.length < 8) cfg.trashParts = pickedTrash.slice();
+      if (pickedTurk.length && pickedTurk.length < 3) cfg.turkishParts = pickedTurk.slice();
+      if (pickedDocs.length && pickedDocs.length < 8) cfg.docsParts = pickedDocs.slice();
+    } else if (mode === "docs") {
+      cfg.mode = "docs";
+      if (pickedDocs.length && pickedDocs.length < 8) cfg.docsParts = pickedDocs.slice();
+      if (layoutDocs === "one") cfg.layout = "one";
     } else {
       if (!$("optMovies").checked) cfg.movies = false;
       if (!$("optShows").checked) cfg.shows = false;
@@ -468,9 +527,10 @@
     [...sel.options].forEach((o) => {
       const isTrash = o.value.startsWith("series/trash-");
       const isTurk = o.value.includes("turkish-");
-      const on = mode === "releases"
-        ? !isTrash && !isTurk && (o.value.startsWith("series") ? tv : mv)
-        : mode === "trash" ? isTrash && trashOn(o.value) : isTurk && turkOn(o.value);
+      const isDocs = /docs-|crime-/.test(o.value);
+      const on = mode === "all" ? false : mode === "releases"
+        ? !isTrash && !isTurk && !isDocs && (o.value.startsWith("series") ? tv : mv)
+        : mode === "trash" ? isTrash && trashOn(o.value) : mode === "turkish" ? isTurk && turkOn(o.value) : isDocs && docsOn(o.value);
       o.disabled = !on;
       o.hidden = !on;
     });
@@ -488,16 +548,25 @@
     if (noPvGenre) $("pvGenre").value = "";
     const trashPicks = pickedTrash.length > 0 && pickedTrash.length < TRASH_PARTS.length;
     const turkPicks = pickedTurk.length > 0 && pickedTurk.length < TURK_PARTS.length;
+    const docPicks = pickedDocs.length > 0 && pickedDocs.length < DOC_PARTS.length;
+    syncAllLayouts();
+    renderAll();
+    const allDefault = allVisible().every((k, i) => k === ALL_KEYS.filter(visibleFor)[i]);
     $("install").textContent = mode === "trash"
       ? (trashPicks ? "Install " + pickedTrash.map(trashLabel).join(" + ") : "Install Trash TV")
       : mode === "turkish"
       ? (turkPicks ? "Install " + pickedTurk.map(turkLabel).join(" + ") : "Install Turkish TV")
+      : mode === "docs"
+      ? (docPicks ? "Install " + pickedDocs.map(docLabel).join(" + ") : "Install Documentaries")
+      : mode === "all"
+      ? (allRowsNow().length === allVisible().length && allDefault ? "Install everything" : "Install " + allRowsNow().length + " rows")
       : pickedGenres.length ? "Install " + pickedGenres.join(" + ") : "Install in Stremio";
     document.querySelectorAll(".panel").forEach((p) => { p.hidden = p.dataset.panel !== mode; });
     document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.mode === mode)));
-    $("daysBox").hidden = mode !== "releases";
-    $("regionRow").hidden = mode === "turkish"; // Turkish TV is always Turkey, so the region doesn't apply
-    $("name").placeholder = mode === "trash" ? "Trash TV" : mode === "turkish" ? "Turkish TV" : "Digital Releases";
+    $("daysBox").hidden = mode !== "releases" && mode !== "all";
+    $("pvCat").disabled = mode === "all";
+    $("regionRow").hidden = mode === "turkish" || mode === "docs"; // Turkish TV is always Turkey; Documentaries don't use a region
+    $("name").placeholder = mode === "trash" ? "Trash TV" : mode === "turkish" ? "Turkish TV" : mode === "docs" ? "Documentaries" : mode === "all" ? "Everything" : "Digital Releases";
   }
   fillGenres();
 
@@ -582,6 +651,7 @@
   // The catalog the preview asks for. Separate rows are previewed one genre at a time, since that's what Stremio shows.
   function previewPath() {
     const base = $("pvCat").value;
+    if (mode === "all") return allRowsNow()[0] || "movie/digital-releases";
     if (mode !== "releases") return base;
     if (layoutRel === "each") {
       const type = base.startsWith("series") ? "tv" : "movie";
@@ -628,6 +698,8 @@
   function renderLayouts() {
     $("layRel").innerHTML = layoutButtons(layoutRel, "Separate row per genre");
     $("layTrash").innerHTML = layoutButtons(layoutTrash, "Separate rows");
+    $("layTurk").innerHTML = layoutButtons(layoutTurk, "Separate rows");
+    $("layDocs").innerHTML = layoutButtons(layoutDocs, "Separate rows");
   }
   $("layRel").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-lay]");
@@ -647,10 +719,22 @@
   // Turkish TV rows: movies, series and reality (always Turkey, so no layout or region choice).
   const TURK_PARTS = [["movies", "Turkish movies"], ["series", "Turkish series"], ["reality", "Turkish reality"]];
   const turkLabel = (id) => (TURK_PARTS.find(([k]) => k === id) || [id, id])[1];
-  function turkOn(v) {
-    const part = v.split("turkish-")[1];
-    return !pickedTurk.length || pickedTurk.includes(part);
+  function famOn(v, picks, layout, typeOf, optionOf, mixOf) {
+    if (layout === "one") {
+      const t = v.split("/")[0];
+      return mixOf[t] === v && (!picks.length || picks.some((p) => typeOf[p] === t));
+    }
+    if (Object.values(mixOf).includes(v)) return false;
+    const part = Object.keys(optionOf).find((p) => optionOf[p] === v);
+    return !!part && (!picks.length || picks.includes(part));
   }
+  const TURK_TYPE = { movies: "movie", series: "series", reality: "series" };
+  const TURK_OPT = { movies: "movie/turkish-movies", series: "series/turkish-series", reality: "series/turkish-reality" };
+  const TURK_MIX = { movie: "movie/turkish-mix-movies", series: "series/turkish-mix-series" };
+  const DOC_TYPE = { docmovies: "movie", docseries: "series", crimeseries: "series", crimemovies: "movie", dochistory: "movie", docmusic: "movie", docwar: "movie", docwarseries: "series" };
+  const DOC_MIX = { movie: "movie/docs-mix-movies", series: "series/docs-mix-series" };
+  function turkOn(v) { return famOn(v, pickedTurk, layoutTurk, TURK_TYPE, TURK_OPT, TURK_MIX); }
+  function docsOn(v) { return famOn(v, pickedDocs, layoutDocs, DOC_TYPE, docOption, DOC_MIX); }
   function renderTurkChips() {
     $("turkChips").innerHTML = TURK_PARTS.map(([id, label]) =>
       `<button type="button" class="chip" aria-pressed="${pickedTurk.includes(id)}" data-tk="${id}">${esc(label)}</button>`).join("");
@@ -664,10 +748,223 @@
     if (!$("preview").disabled) $("preview").click();
   });
 
+  // Documentaries rows: documentary movies and series, plus true crime movies and series.
+  const DOC_PARTS = [["docmovies", "Documentary movies"], ["docseries", "Documentary series"], ["crimeseries", "True crime series"], ["crimemovies", "True crime movies"], ["dochistory", "History documentaries"], ["docmusic", "Music documentaries"], ["docwar", "War documentaries"], ["docwarseries", "War and politics series"]];
+  const docLabel = (id) => (DOC_PARTS.find(([k]) => k === id) || [id, id])[1];
+  // Each row's preview option (matches the server's catalog ids).
+  const docOption = { docmovies: "movie/docs-movies", docseries: "series/docs-series", crimeseries: "series/crime-series", crimemovies: "movie/crime-movies", dochistory: "movie/docs-history", docmusic: "movie/docs-music", docwar: "movie/docs-war", docwarseries: "series/docs-war-series" };
+  function renderDocChips() {
+    $("docChips").innerHTML = DOC_PARTS.map(([id, label]) =>
+      `<button type="button" class="chip" aria-pressed="${pickedDocs.includes(id)}" data-dc="${id}">${esc(label)}</button>`).join("");
+  }
+  $("docChips").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-dc]");
+    if (!b) return;
+    const id = b.dataset.dc;
+    pickedDocs = pickedDocs.includes(id) ? pickedDocs.filter((x) => x !== id) : [...pickedDocs, id];
+    renderDocChips(); update();
+    if (!$("preview").disabled) $("preview").click();
+  });
+
+  // Layout buttons for the Turkish and Documentaries tabs (same behaviour as Releases and Trash TV).
+  $("layTurk").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-lay]");
+    if (!b) return;
+    layoutTurk = b.dataset.lay;
+    renderLayouts(); update();
+    if (!$("preview").disabled) $("preview").click();
+  });
+  $("layDocs").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-lay]");
+    if (!b) return;
+    layoutDocs = b.dataset.lay;
+    renderLayouts(); update();
+    if (!$("preview").disabled) $("preview").click();
+  });
+
+  // Everything: every row, separate or combined. A tab's layout decides which of its rows appear here,
+  // and combined rows are ticked when their tab switches to combined (the same way the tab itself works).
+  const ALL_ROWS = [
+    ["movie/digital-releases", "Releases: digitally available movies"],
+    ["series/streaming-new", "Releases: new shows streaming"],
+    ["series/streaming-airing", "Releases: new episodes this week"],
+    ["series/trash-mix", "Trash TV: one combined row"],
+    ["series/trash-bravo", "Trash TV: Bravo universe"],
+    ["series/trash-bravonow", "Trash TV: Bravo universe, on now"],
+    ["series/trash-reality", "Trash TV: reality, on now"],
+    ["series/trash-dating", "Trash TV: dating and love shows"],
+    ["series/trash-drama", "Trash TV: reality drama"],
+    ["series/trash-daytime", "Trash TV: daytime chaos"],
+    ["series/trash-tlc", "Trash TV: train wrecks"],
+    ["series/trash-novelas", "Trash TV: telenovelas"],
+    ["movie/turkish-mix-movies", "Turkish TV: one row, movies"],
+    ["series/turkish-mix-series", "Turkish TV: one row, series and reality"],
+    ["movie/turkish-movies", "Turkish TV: movies"],
+    ["series/turkish-series", "Turkish TV: series"],
+    ["series/turkish-reality", "Turkish TV: reality"],
+    ["movie/docs-mix-movies", "Documentaries: one row, movies"],
+    ["series/docs-mix-series", "Documentaries: one row, series"],
+    ["movie/docs-movies", "Documentaries: movies"],
+    ["series/docs-series", "Documentaries: series"],
+    ["series/crime-series", "Documentaries: true crime series"],
+    ["movie/crime-movies", "Documentaries: true crime movies"],
+    ["movie/docs-history", "Documentaries: history movies"],
+    ["movie/docs-music", "Documentaries: music movies"],
+    ["movie/docs-war", "Documentaries: war movies"],
+    ["series/docs-war-series", "Documentaries: war and politics series"],
+  ];
+  const ALL_KEYS = ALL_ROWS.map((r) => r[0]);
+  const allLabel = (k) => (ALL_ROWS.find((r) => r[0] === k) || [k, k])[1];
+  const isMixKey = (k) => /-mix-|-mix$/.test(k);
+  const famOf = (k) => (k.startsWith("movie/digital") || k.startsWith("series/streaming") ? "releases"
+    : k.includes("trash") ? "trash" : k.includes("turkish") ? "turkish" : "docs");
+  const layoutOf = (f) => (f === "trash" ? layoutTrash : f === "turkish" ? layoutTurk : f === "docs" ? layoutDocs : "each");
+  // A combined row only appears when its type has a pick (or nothing is picked); separate rows always follow the tab's layout.
+  const picksFor = (f, type) => f === "trash" ? true
+    : f === "turkish" ? (!pickedTurk.length || pickedTurk.some((p) => TURK_TYPE[p] === type))
+    : (!pickedDocs.length || pickedDocs.some((p) => DOC_TYPE[p] === type));
+  function visibleFor(k) {
+    const f = famOf(k);
+    if (f === "releases") return !isMixKey(k);
+    if (isMixKey(k)) return layoutOf(f) === "one" && picksFor(f, k.split("/")[0]);
+    return layoutOf(f) !== "one";
+  }
+  const allVisible = () => allOrder.filter(visibleFor);
+  const allRowsNow = () => allVisible().filter((k) => allOn.includes(k));
+  const lastLayout = {};
+  function syncAllLayouts() {
+    for (const f of ["trash", "turkish", "docs"]) {
+      const cur = layoutOf(f);
+      if (lastLayout[f] !== undefined && lastLayout[f] !== cur) {
+        for (const k of allOrder) if (famOf(k) === f && visibleFor(k) && !allOn.includes(k)) allOn.push(k);
+      }
+      lastLayout[f] = cur;
+    }
+  }
+  if (!allOrder.length) allOrder = ALL_KEYS.slice();
+  // Install links say which rows they had; that also tells us each tab's layout.
+  if (prefillAll && prefillAll.length) {
+    const has = (k) => prefillAll.includes(k);
+    for (const f of ["trash", "turkish", "docs"]) {
+      const keys = ALL_KEYS.filter((k) => famOf(k) === f);
+      const mix = keys.filter(isMixKey), sep = keys.filter((k) => !isMixKey(k));
+      if (mix.some(has)) layoutSet(f, "one");
+      else if (sep.some(has)) layoutSet(f, "each");
+    }
+  }
+  function layoutSet(f, v) {
+    if (f === "trash") layoutTrash = v;
+    else if (f === "turkish") layoutTurk = v;
+    else if (f === "docs") layoutDocs = v;
+  }
+  if (prefillAll && prefillAll.some((k) => ALL_KEYS.includes(k))) {
+    const keep = prefillAll.filter((k) => ALL_KEYS.includes(k));
+    allOrder = [...keep, ...ALL_KEYS.filter((k) => !keep.includes(k))];
+    allOn = keep.slice();
+  } else {
+    allOn = allOrder.slice();
+  }
+  function renderAll() {
+    const vis = allVisible();
+    $("allList").innerHTML = vis.map((k, i) => `<li data-row="${esc(k)}">
+        <span class="grip" data-grip="${esc(k)}" role="img" aria-label="Drag to move" title="Drag to move">⋮⋮</span>
+        <label><input type="checkbox" data-ck="${esc(k)}" ${allOn.includes(k) ? "checked" : ""}> <span>${esc(allLabel(k))}</span></label>
+        <span class="mv">
+          <button type="button" data-mv="top" data-k="${esc(k)}" aria-label="Move to top" ${i === 0 ? "disabled" : ""}>Top</button>
+          <button type="button" data-mv="-1" data-k="${esc(k)}" aria-label="Move up" ${i === 0 ? "disabled" : ""}>▲</button>
+          <button type="button" data-mv="1" data-k="${esc(k)}" aria-label="Move down" ${i === vis.length - 1 ? "disabled" : ""}>▼</button>
+          <button type="button" data-mv="bottom" data-k="${esc(k)}" aria-label="Move to bottom" ${i === vis.length - 1 ? "disabled" : ""}>Bottom</button>
+        </span>
+      </li>`).join("");
+  }
+  // Moves a row to a position among the visible rows; hidden rows keep their slots.
+  function moveTo(k, target) {
+    const vis = allVisible().filter((x) => x !== k);
+    target = Math.max(0, Math.min(vis.length, target));
+    vis.splice(target, 0, k);
+    const slots = allOrder.map((x, i) => (visibleFor(x) ? i : -1)).filter((i) => i >= 0);
+    const next = allOrder.slice();
+    slots.forEach((slot, n) => { next[slot] = vis[n]; });
+    allOrder = next;
+  }
+  $("allList").addEventListener("change", (e) => {
+    const cb = e.target.closest("input[data-ck]");
+    if (!cb) return;
+    const k = cb.dataset.ck;
+    if (cb.checked) { if (!allOn.includes(k)) allOn.push(k); }
+    else allOn = allOn.filter((x) => x !== k);
+    update();
+    if (!$("preview").disabled) $("preview").click();
+  });
+  // Buttons: Top, Bottom, or one step up/down (data-mv is "top", "bottom", or -1/1).
+  $("allList").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-mv]");
+    if (!b || b.disabled) return;
+    const k = b.dataset.k, vis = allVisible(), vi = vis.indexOf(k);
+    const m = b.dataset.mv;
+    const target = m === "top" ? 0 : m === "bottom" ? vis.length - 1 : vi + Number(m);
+    if (target < 0 || target >= vis.length) return;
+    moveTo(k, target);
+    renderAll(); update();
+    if (!$("preview").disabled) $("preview").click();
+  });
+  // Drag by the handle (mouse, pen or touch): drop a row onto another row to place it there.
+  let drag = null;
+  $("allList").addEventListener("pointerdown", (e) => {
+    const g = e.target.closest("[data-grip]");
+    if (!g) return;
+    drag = { k: g.dataset.grip, over: null, li: g.closest("li") };
+    drag.li.classList.add("dragging");
+    if (g.setPointerCapture) g.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  $("allList").addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const li = under && under.closest ? under.closest("li[data-row]") : null;
+    document.querySelectorAll("#allList li").forEach((x) => x.classList.remove("drop"));
+    if (li) li.classList.add("drop");
+    drag.over = li ? li.dataset.row : null;
+  });
+  function endDrag(apply) {
+    if (!drag) return;
+    const { k, over, li } = drag;
+    drag = null;
+    if (li) li.classList.remove("dragging");
+    document.querySelectorAll("#allList li").forEach((x) => x.classList.remove("drop"));
+    if (apply && over && over !== k) {
+      moveTo(k, allVisible().indexOf(over));
+      renderAll(); update();
+      if (!$("preview").disabled) $("preview").click();
+    }
+  }
+  $("allList").addEventListener("pointerup", () => endDrag(true));
+  $("allList").addEventListener("pointercancel", () => endDrag(false));
+  // Reset everything: back to the default state on every tab, and the Everything order and ticks.
+  $("allReset").addEventListener("click", () => {
+    pickedGenres = [];
+    layoutRel = "one";
+    pickedTrash = [];
+    layoutTrash = "each";
+    pickedTurk = [];
+    layoutTurk = "each";
+    pickedDocs = [];
+    layoutDocs = "each";
+    $("optMovies").checked = true;
+    $("optShows").checked = true;
+    allOrder = ALL_KEYS.slice();
+    allOn = allOrder.slice();
+    renderChips(); renderTrashChips(); renderLayouts(); renderTurkChips(); renderDocChips();
+    renderAll(); update();
+    if (!$("preview").disabled) $("preview").click();
+  });
+  renderAll();
+
   renderChips();
   renderTrashChips();
   renderLayouts();
   renderTurkChips();
+  renderDocChips();
   update();
 </script>
 </body>

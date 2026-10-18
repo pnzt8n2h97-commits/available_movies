@@ -87,7 +87,11 @@ function parseConfig(b64) {
   const tp = Array.isArray(c.trashParts)
     ? [...new Set(c.trashParts.filter((p) => Object.prototype.hasOwnProperty.call(TRASH, p)))]
     : [];
-  const mode = c.mode === "trash" ? "trash" : c.mode === "turkish" ? "turkish" : "releases";
+  const mode = c.mode === "trash" ? "trash" : c.mode === "turkish" ? "turkish" : c.mode === "docs" ? "docs" : c.mode === "all" ? "all" : "releases";
+  const ar = Array.isArray(c.allRows) ? [...new Set(c.allRows.filter((k) => ALL_SERVABLE.includes(k)))] : [];
+  const allRows = ar.length ? ar : ALL_ROW_KEYS.slice();
+  const dp = Array.isArray(c.docsParts) ? c.docsParts.filter((p) => DOCS_PARTS.includes(p)) : [];
+  const docsParts = dp.length ? DOCS_PARTS.filter((p) => dp.includes(p)) : DOCS_PARTS.slice();
   const tkp = Array.isArray(c.turkishParts) ? c.turkishParts.filter((p) => TURKISH_PARTS.includes(p)) : [];
   const turkishParts = tkp.length ? TURKISH_PARTS.filter((p) => tkp.includes(p)) : TURKISH_PARTS.slice();
   // Genres picked on the Releases tab (older links carried a single "genre"). None picked means every genre.
@@ -96,7 +100,7 @@ function parseConfig(b64) {
   );
   const genres = Object.keys(GENRE_PICK).filter((g) => pickedGenres.includes(g));
   // Layout: one combined row, or a separate row for each pick. Releases default to one row, Trash TV to separate rows.
-  const layout = mode === "trash" ? (c.layout === "one" ? "one" : "each") : c.layout === "each" ? "each" : "one";
+  const layout = mode === "releases" ? (c.layout === "each" ? "each" : "one") : (c.layout === "one" ? "one" : "each");
   const trashParts = tp.length ? Object.keys(TRASH).filter((id) => tp.includes(id)) : Object.keys(TRASH);
   return {
     mode,
@@ -104,6 +108,8 @@ function parseConfig(b64) {
     genres,
     trashParts,
     turkishParts,
+    docsParts,
+    allRows,
     tmdbKey: /^[\w.-]+$/.test(tmdbKey) ? tmdbKey : "",
     rpdbKey: validRpdb,
     topKey: validTop,
@@ -520,23 +526,201 @@ function turkishReality(cfg) {
   });
 }
 
-function turkishName(cfg) {
-  return cfg.turkishParts.length === TURKISH_PARTS.length
-    ? "Turkish TV"
-    : `Turkish TV: ${cfg.turkishParts.map((p) => TURKISH_NAMES[p].replace("Turkish ", "")).join(" + ")}`;
+// ---- Documentaries: its own add-on. Documentary films and series, plus true crime (Crime + Documentary together). ----
+const DOCS_PARTS = ["docmovies", "docseries", "crimeseries", "crimemovies", "dochistory", "docmusic", "docwar", "docwarseries"];
+const DOCS_NAMES = {
+  docmovies: "Documentary Movies",
+  docseries: "Documentary Series",
+  crimeseries: "True Crime Series",
+  crimemovies: "True Crime Movies",
+  dochistory: "History Documentaries",
+  docmusic: "Music Documentaries",
+  docwar: "War Documentaries",
+  docwarseries: "War and Politics Documentary Series",
+};
+const docsKey = {
+  docmovies: "movie/docs-movies",
+  docseries: "series/docs-series",
+  crimeseries: "series/crime-series",
+  crimemovies: "movie/crime-movies",
+  dochistory: "movie/docs-history",
+  docmusic: "movie/docs-music",
+  docwar: "movie/docs-war",
+  docwarseries: "series/docs-war-series",
+};
+// TMDB genre ids: 99 Documentary, 80 Crime. A comma means "both genres"; a pipe would mean "either".
+CATALOGS["movie/docs-movies"] = () => ({ kind: "movie", path: "/discover/movie", params: { with_genres: "99", "vote_count.gte": "20", sort_by: "popularity.desc" } });
+CATALOGS["series/docs-series"] = () => ({ kind: "tv", path: "/discover/tv", params: { with_genres: "99", "vote_count.gte": "10", sort_by: "popularity.desc" } });
+CATALOGS["series/crime-series"] = () => ({ kind: "tv", path: "/discover/tv", params: { with_genres: "80,99", "vote_count.gte": "10", sort_by: "popularity.desc" } });
+CATALOGS["movie/crime-movies"] = () => ({ kind: "movie", path: "/discover/movie", params: { with_genres: "80,99", "vote_count.gte": "10", sort_by: "popularity.desc" } });
+CATALOGS["movie/docs-history"] = () => ({ kind: "movie", path: "/discover/movie", params: { with_genres: "99,36", "vote_count.gte": "10", sort_by: "popularity.desc" } });
+CATALOGS["movie/docs-music"] = () => ({ kind: "movie", path: "/discover/movie", params: { with_genres: "99,10402", "vote_count.gte": "10", sort_by: "popularity.desc" } });
+CATALOGS["movie/docs-war"] = () => ({ kind: "movie", path: "/discover/movie", params: { with_genres: "99,10752", "vote_count.gte": "10", sort_by: "popularity.desc" } });
+CATALOGS["series/docs-war-series"] = () => ({ kind: "tv", path: "/discover/tv", params: { with_genres: "99,10768", "vote_count.gte": "10", sort_by: "popularity.desc" } });
+
+// Both families share one builder. "Separate rows" uses each row's own catalog id (unchanged from before).
+// "One combined row" makes one row per type (Stremio rows hold a single type, so movies and series can't share one).
+const FAMILIES = {
+  turkish: {
+    modeName: "turkish",
+    partsKey: "turkishParts",
+    baseName: "Turkish TV",
+    id: "community.turkish-tv",
+    version: "1.10.0",
+    description: "Turkish movies, series and reality TV.",
+    parts: TURKISH_PARTS,
+    names: TURKISH_NAMES,
+    keyOf: turkishKey,
+    typeOf: { movies: "movie", series: "series", reality: "series" },
+    labelOf: { movies: "Movies", series: "Series", reality: "Reality" },
+    mixOf: { movie: "movie/turkish-mix-movies", series: "series/turkish-mix-series" },
+  },
+  docs: {
+    modeName: "docs",
+    partsKey: "docsParts",
+    baseName: "Documentaries",
+    id: "community.documentaries",
+    version: "1.10.0",
+    description: "Documentary films and series, plus true crime.",
+    parts: DOCS_PARTS,
+    names: DOCS_NAMES,
+    keyOf: docsKey,
+    typeOf: { docmovies: "movie", docseries: "series", crimeseries: "series", crimemovies: "movie", dochistory: "movie", docmusic: "movie", docwar: "movie", docwarseries: "series" },
+    labelOf: DOCS_NAMES,
+    mixOf: { movie: "movie/docs-mix-movies", series: "series/docs-mix-series" },
+  },
+};
+
+// Combined rows: one per type, mixing that type's picks in turn (like the Trash TV mix).
+async function partListByKey(cfg, key) {
+  const def = CATALOGS[key](cfg);
+  if (def.custom) return def.custom(cfg);
+  const pages = await Promise.all(
+    [1, 2].map((page) => tmdb(cfg.tmdbKey, def.path, { ...def.params, include_adult: "false", page: String(page) }))
+  );
+  return pages.flatMap((d) => d.results);
+}
+function familyMix(fam, cfg, type) {
+  const parts = cfg[fam.partsKey].filter((p) => fam.typeOf[p] === type);
+  return memoized(`mix:${fam.modeName}:${type}:${parts.join(",")}:${keyHash(cfg.tmdbKey)}`, 600000, async () => {
+    const lists = await Promise.all(parts.map((p) => partListByKey(cfg, fam.keyOf[p]).catch(() => [])));
+    const seen = new Set();
+    const out = [];
+    for (let i = 0; out.length < 120 && lists.some((l) => i < l.length); i++) {
+      for (const l of lists) {
+        const m = l[i];
+        if (!m) continue;
+        const k = normName(m.name);
+        if (!seen.has(k)) {
+          seen.add(k);
+          out.push(m);
+        }
+      }
+    }
+    return out;
+  });
+}
+for (const fam of Object.values(FAMILIES)) {
+  for (const type of ["movie", "series"]) {
+    CATALOGS[fam.mixOf[type]] = () => ({
+      kind: type === "movie" ? "movie" : "tv",
+      custom: (cfg) => familyMix(fam, cfg, type),
+    });
+  }
 }
 
-function buildTurkishManifest(cfg, cfgKey) {
+function familyName(fam, cfg) {
+  const picks = cfg[fam.partsKey];
+  const one = cfg.layout === "one" ? ", one row" : "";
+  if (picks.length === fam.parts.length) return fam.baseName + one;
+  return `${fam.baseName}: ${picks.map((p) => fam.labelOf[p]).join(" + ")}${one}`;
+}
+
+function familyManifest(fam, cfg, cfgKey) {
   const suffix = "." + crypto.createHash("sha1").update(cfgKey || "").digest("hex").slice(0, 8);
-  const catalogs = cfg.turkishParts.map((p) => {
-    const [type, id] = turkishKey[p].split("/");
-    return { type, id, name: TURKISH_NAMES[p], extra: [{ name: "skip" }] };
+  const picks = cfg[fam.partsKey];
+  let catalogs;
+  if (cfg.layout === "one") {
+    catalogs = ["movie", "series"]
+      .filter((t) => picks.some((p) => fam.typeOf[p] === t))
+      .map((t) => {
+        const [type, id] = fam.mixOf[t].split("/");
+        const name = picks.filter((p) => fam.typeOf[p] === t).map((p) => fam.names[p]).join(" + ");
+        return { type, id, name, extra: [{ name: "skip" }] };
+      });
+  } else {
+    catalogs = picks.map((p) => {
+      const [type, id] = fam.keyOf[p].split("/");
+      return { type, id, name: fam.names[p], extra: [{ name: "skip" }] };
+    });
+  }
+  return {
+    id: fam.id + suffix,
+    version: fam.version,
+    name: cfg.name || familyName(fam, cfg),
+    description: fam.description,
+    resources: ["catalog"],
+    types: [...new Set(catalogs.map((c) => c.type))],
+    catalogs,
+    behaviorHints: { configurable: true, configurationRequired: false },
+  };
+}
+
+// Which requests a family install may serve: its own tab only, and only the layout it was installed with.
+function familyBlocked(fam, cfg, key, slugPart) {
+  if (cfg.mode !== fam.modeName || slugPart) return true;
+  const picks = cfg[fam.partsKey];
+  const mixType = Object.keys(fam.mixOf).find((t) => fam.mixOf[t] === key);
+  if (mixType) return cfg.layout !== "one" || !picks.some((p) => fam.typeOf[p] === mixType);
+  if (cfg.layout === "one") return true;
+  const part = Object.keys(fam.keyOf).find((p) => fam.keyOf[p] === key);
+  return !part || !picks.includes(part);
+}
+
+// ---- Everything: one add-on with every row from every tab, in the order you choose on the page. ----
+const RELEASE_NAMES = {
+  "movie/digital-releases": "Digitally Available",
+  "series/streaming-new": "New Shows Streaming",
+  "series/streaming-airing": "New Episodes This Week",
+};
+const ALL_ROW_KEYS = [
+  "movie/digital-releases", "series/streaming-new", "series/streaming-airing",
+  "series/trash-bravo", "series/trash-bravonow", "series/trash-reality", "series/trash-dating",
+  "series/trash-drama", "series/trash-daytime", "series/trash-tlc", "series/trash-novelas",
+  ...Object.values(turkishKey),
+  ...Object.values(docsKey),
+];
+// Combined rows (one per type, from a tab set to "one combined row"). Everything can include these instead of the separate rows.
+const ALL_MIX_KEYS = ["series/trash-mix", "movie/turkish-mix-movies", "series/turkish-mix-series", "movie/docs-mix-movies", "series/docs-mix-series"];
+const ALL_SERVABLE = [...ALL_ROW_KEYS, ...ALL_MIX_KEYS];
+const MIX_NAMES = {
+  "series/trash-mix": "Trash TV: one combined row",
+  "movie/turkish-mix-movies": "Turkish Movies, one row",
+  "series/turkish-mix-series": "Turkish Series and Reality, one row",
+  "movie/docs-mix-movies": "Documentary Movies, one row",
+  "series/docs-mix-series": "Documentary Series, one row",
+};
+function rowName(key) {
+  if (MIX_NAMES[key]) return MIX_NAMES[key];  if (RELEASE_NAMES[key]) return RELEASE_NAMES[key];
+  const trash = key.match(/^series\/trash-(\w+)$/);
+  if (trash && TRASH[trash[1]]) return TRASH[trash[1]].name;
+  const tk = Object.keys(turkishKey).find((p) => turkishKey[p] === key);
+  if (tk) return TURKISH_NAMES[tk];
+  const dk = Object.keys(docsKey).find((p) => docsKey[p] === key);
+  if (dk) return DOCS_NAMES[dk];
+  return key;
+}
+function buildAllManifest(cfg, cfgKey) {
+  const suffix = "." + crypto.createHash("sha1").update(cfgKey || "").digest("hex").slice(0, 8);
+  const catalogs = cfg.allRows.map((key) => {
+    const [type, id] = key.split("/");
+    return { type, id, name: rowName(key), extra: [{ name: "skip" }] };
   });
   return {
-    id: "community.turkish-tv" + suffix,
-    version: "1.8.0",
-    name: cfg.name || turkishName(cfg),
-    description: "Turkish movies, series and reality TV.",
+    id: "community.everything" + suffix,
+    version: "1.11.0",
+    name: cfg.name || (cfg.region === "US" ? "Everything" : `Everything (${cfg.region})`),
+    description: "Every row from Releases, Trash TV, Turkish TV and Documentaries, in your order.",
     resources: ["catalog"],
     types: [...new Set(catalogs.map((c) => c.type))],
     catalogs,
@@ -568,8 +752,10 @@ function buildTrashManifest(cfg, cfgKey) {
 // Stremio treats the manifest id as the add-on's identity: same id = replaces the installed copy.
 // A short hash of the config makes every differently configured link install side by side.
 function buildManifest(cfg, cfgKey) {
+  if (cfg.mode === "all") return buildAllManifest(cfg, cfgKey);
   if (cfg.mode === "trash") return buildTrashManifest(cfg, cfgKey);
-  if (cfg.mode === "turkish") return buildTurkishManifest(cfg, cfgKey);
+  if (cfg.mode === "turkish") return familyManifest(FAMILIES.turkish, cfg, cfgKey);
+  if (cfg.mode === "docs") return familyManifest(FAMILIES.docs, cfg, cfgKey);
   const suffix = cfgKey ? "." + crypto.createHash("sha1").update(cfgKey).digest("hex").slice(0, 8) : "";
   const movieExtra = [{ name: "genre", options: Object.keys(GENRE_IDS.movie) }, { name: "skip" }];
   const tvExtra = [{ name: "genre", options: Object.keys(GENRE_IDS.tv) }, { name: "skip" }];
@@ -723,6 +909,8 @@ async function getShowcase(cfg, kind) {
   const sources =
     kind === "tv"
       ? [["series/streaming-new", 1], ["series/streaming-new", 2], ["series/streaming-airing", 1]]
+      : kind === "docs"
+      ? [["series/docs-series", 1], ["movie/docs-movies", 1], ["series/crime-series", 1], ["movie/crime-movies", 1]]
       : kind === "turkish"
       ? [["series/turkish-series", 1], ["movie/turkish-movies", 1], ["series/turkish-reality", 1]]
       : kind === "trash"
@@ -789,7 +977,7 @@ module.exports = async (req, res) => {
   if (m[2] === "showcase.json" || m[2] === "showcase-tv.json") {
     if (!cfg.tmdbKey) return send(res, 200, { posters: [] }, "public, max-age=60");
     try {
-      return send(res, 200, await getShowcase(cfg, m[2] === "showcase-tv.json" ? "tv" : cfg.mode === "trash" ? "trash" : cfg.mode === "turkish" ? "turkish" : "movie"), "public, max-age=600, s-maxage=1800, stale-while-revalidate=3600");
+      return send(res, 200, await getShowcase(cfg, m[2] === "showcase-tv.json" ? "tv" : cfg.mode === "trash" ? "trash" : cfg.mode === "turkish" ? "turkish" : cfg.mode === "docs" ? "docs" : "movie"), "public, max-age=600, s-maxage=1800, stale-while-revalidate=3600");
     } catch {
       return send(res, 200, { posters: [] }, "public, max-age=60");
     }
@@ -805,11 +993,16 @@ module.exports = async (req, res) => {
   if (!CATALOGS[key]) return send(res, 404, { metas: [], error: "Unknown catalog" });
   const isTrashKey = key.startsWith("series/trash-");
   const isTurkishKey = /^(movie|series)\/turkish-/.test(key);
+  const isDocsKey = /^(movie|series)\/(docs|crime)-/.test(key);
   const eff = effective(cfg);
   let rowGenre = "";
   let blocked;
-  if (isTurkishKey) {
-    blocked = cfg.mode !== "turkish" || !!slugPart || !cfg.turkishParts.includes(baseId.slice(8));
+  if (cfg.mode === "all") {
+    blocked = !ALL_SERVABLE.includes(key) || !cfg.allRows.includes(key) || !!slugPart;
+  } else if (isDocsKey) {
+    blocked = familyBlocked(FAMILIES.docs, cfg, key, slugPart);
+  } else if (isTurkishKey) {
+    blocked = familyBlocked(FAMILIES.turkish, cfg, key, slugPart);
   } else if (isTrashKey) {
     const part = baseId.slice(6); // after "trash-"
     blocked =
