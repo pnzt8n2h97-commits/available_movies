@@ -486,10 +486,12 @@ function trashName(cfg) {
 const TURKISH_PARTS = ["movies", "series", "reality"];
 const TURKISH_NAMES = { movies: "Turkish Movies", series: "Turkish Series", reality: "Turkish Reality" };
 const turkishKey = { movies: "movie/turkish-movies", series: "series/turkish-series", reality: "series/turkish-reality" };
+// Made in Turkey, any language (many Turkish films are shot partly in other languages or tagged differently),
+// with a low vote floor so the row isn't down to a handful of titles.
 CATALOGS["movie/turkish-movies"] = () => ({
   kind: "movie",
   path: "/discover/movie",
-  params: { with_origin_country: "TR", with_original_language: "tr", "vote_count.gte": "20", sort_by: "popularity.desc" },
+  params: { with_origin_country: "TR", "vote_count.gte": "3", sort_by: "popularity.desc" },
 });
 CATALOGS["series/turkish-series"] = () => ({
   kind: "tv",
