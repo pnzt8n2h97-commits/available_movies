@@ -33,14 +33,19 @@ const GENRE_PICK = {
   Thriller: { movie: 53, tv: null }, War: { movie: 10752, tv: 10768 }, Western: { movie: 37, tv: 37 },
 };
 
-// Which parts are really on: the switches, minus types the picked genre doesn't exist for.
+// Genre helpers: a slug per genre (used in per-genre row ids like "digital-releases--comedy") and a short label.
+const slug = (g) => g.toLowerCase().replace(/\s+/g, "-");
+const SLUG_TO_GENRE = Object.fromEntries(Object.keys(GENRE_PICK).map((g) => [slug(g), g]));
+const genreLabel = (sel) => (sel.length <= 3 ? sel.join(" + ") : `${sel.slice(0, 2).join(" + ")} + ${sel.length - 2} more`);
+
+// Which parts are really on: the switches, minus types that none of the picked genres exist for.
 function effective(cfg) {
-  const g = cfg.genre ? GENRE_PICK[cfg.genre] : null;
-  let movies = cfg.movies && (!g || !!g.movie);
-  let shows = cfg.shows && (!g || !!g.tv);
-  if (!movies && !shows && g) {
-    movies = !!g.movie;
-    shows = !!g.tv;
+  const picked = cfg.genres.map((g) => GENRE_PICK[g]);
+  let movies = cfg.movies && (!picked.length || picked.some((g) => g.movie));
+  let shows = cfg.shows && (!picked.length || picked.some((g) => g.tv));
+  if (!movies && !shows && picked.length) {
+    movies = picked.some((g) => g.movie);
+    shows = picked.some((g) => g.tv);
   }
   return { movies, shows };
 }
@@ -82,17 +87,29 @@ function parseConfig(b64) {
   const tp = Array.isArray(c.trashParts)
     ? [...new Set(c.trashParts.filter((p) => Object.prototype.hasOwnProperty.call(TRASH, p)))]
     : [];
+  const mode = c.mode === "trash" ? "trash" : c.mode === "turkish" ? "turkish" : "releases";
+  const tkp = Array.isArray(c.turkishParts) ? c.turkishParts.filter((p) => TURKISH_PARTS.includes(p)) : [];
+  const turkishParts = tkp.length ? TURKISH_PARTS.filter((p) => tkp.includes(p)) : TURKISH_PARTS.slice();
+  // Genres picked on the Releases tab (older links carried a single "genre"). None picked means every genre.
+  const pickedGenres = [...(Array.isArray(c.genres) ? c.genres : []), c.genre].filter(
+    (g) => typeof g === "string" && Object.prototype.hasOwnProperty.call(GENRE_PICK, g)
+  );
+  const genres = Object.keys(GENRE_PICK).filter((g) => pickedGenres.includes(g));
+  // Layout: one combined row, or a separate row for each pick. Releases default to one row, Trash TV to separate rows.
+  const layout = mode === "trash" ? (c.layout === "one" ? "one" : "each") : c.layout === "each" ? "each" : "one";
+  const trashParts = tp.length ? Object.keys(TRASH).filter((id) => tp.includes(id)) : Object.keys(TRASH);
   return {
-    mode: c.mode === "trash" ? "trash" : "releases",
-    trashParts: tp.length ? tp : Object.keys(TRASH),
+    mode,
+    layout,
+    genres,
+    trashParts,
+    turkishParts,
     tmdbKey: /^[\w.-]+$/.test(tmdbKey) ? tmdbKey : "",
     rpdbKey: validRpdb,
     topKey: validTop,
     posterProvider,
     posterTemplate,
     name: String(c.name || "").trim().slice(0, 40),
-    genre:
-      typeof c.genre === "string" && Object.prototype.hasOwnProperty.call(GENRE_PICK, c.genre) ? c.genre : "",
     movies,
     shows,
     region,
@@ -106,6 +123,7 @@ const today = () => isoDate(new Date());
 
 // COMPATIBILITY (so installed copies keep working and never need a reinstall):
 // - Never rename or remove a catalog key below, or change the URL routes. Old installs call these exact ids.
+//   Per-genre rows are "<catalog id>--<genre slug>" (see slug()); keep that pattern and the slugs stable.
 // - Never remove or rename a config field in parseConfig. Old install links must keep decoding the same way,
 //   and any new field needs a default so older links still work.
 // - Never change how the manifest id is hashed in buildManifest: a new id installs as a duplicate.
@@ -204,6 +222,13 @@ async function memoized(key, ttlMs, fn) {
   return val;
 }
 
+// "Guilty-pleasure" score: hugely watched but not well rated floats to the top.
+const trashScore = (m) => {
+  const r = m.vote_average > 0 ? m.vote_average : m.rating > 0 ? m.rating : 6; // TMDB or TVMaze rating, else neutral
+  return (m.popularity || 0) * (11 - Math.min(10, r));
+};
+const byTrash = (a, b) => trashScore(b) - trashScore(a);
+
 // Builds a list from searching each franchise name; keeps only name matches, most popular first.
 const searchList = (id, names) => {
   const match = matcher(names);
@@ -220,7 +245,7 @@ const searchList = (id, names) => {
       return lists
         .flat()
         .filter((m) => !seen.has(m.id) && seen.add(m.id))
-        .sort((a, b) => b.popularity - a.popularity)
+        .sort(byTrash)
         .slice(0, 60);
     });
 };
@@ -260,17 +285,23 @@ async function tvmazeGet(path) {
   return res.json();
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const byPopularity = (a, b) => (b.popularity || 0) - (a.popularity || 0);
 
-// Shows that aired in the last 7 days on US broadcast TV or on streaming, most popular first.
-// 14 requests in two bursts keeps us under TVMaze's ~20 calls per 10 seconds; the result is cached.
-function tvmazeRecent() {
-  return memoized("tvmaze:recent", 1800000, async () => {
+// Main language of each region, used to recognise region-less streaming shows.
+const LANG_BY_REGION = {
+  US: "English", GB: "English", CA: "English", AU: "English", DE: "German", FR: "French", ES: "Spanish",
+  IT: "Italian", NL: "Dutch", SE: "Swedish", BR: "Portuguese", MX: "Spanish", IN: "Hindi",
+  JP: "Japanese", KR: "Korean", TR: "Turkish",
+};
+
+// Shows that aired in the last 7 days in a region (broadcast TV and streaming).
+// 14 requests in two bursts keeps us under TVMaze's ~20 calls per 10 seconds; the result is cached per region.
+function tvmazeRecent(region) {
+  return memoized("tvmaze:recent:" + region, 1800000, async () => {
     const jobs = [];
     for (let i = 0; i < 7; i++) {
       const d = daysAgo(i);
-      jobs.push(`/schedule?country=US&date=${d}`);
-      jobs.push(`/schedule/web?date=${d}&country=US`);
+      jobs.push(`/schedule?country=${region}&date=${d}`);
+      jobs.push(`/schedule/web?date=${d}&country=${region}`);
     }
     const lists = [];
     for (let i = 0; i < jobs.length; i += 7) {
@@ -283,6 +314,7 @@ function tvmazeRecent() {
         const show = ep.show || (ep._embedded && ep._embedded.show);
         if (!show || !show.id || byId.has(show.id)) continue;
         const img = show.image && (show.image.medium || show.image.original);
+        const net = show.network || show.webChannel || {};
         byId.set(show.id, {
           id: show.id,
           name: show.name,
@@ -291,10 +323,11 @@ function tvmazeRecent() {
           overview: String(show.summary || "").replace(/<[^>]*>/g, "").trim(),
           first_air_date: show.premiered,
           popularity: show.weight || 0,
+          rating: show.rating && show.rating.average,
           type: String(show.type || "").toLowerCase(),
           language: show.language,
-          network: (show.network && show.network.name) || (show.webChannel && show.webChannel.name) || "",
-          country: show.network && show.network.country && show.network.country.code,
+          network: net.name || "",
+          country: net.country && net.country.code,
         });
       }
     }
@@ -303,14 +336,14 @@ function tvmazeRecent() {
   });
 }
 
-// TMDB version of "US reality airing lately" (used as the fallback and as the base for the Bravo filter).
+// TMDB version of "reality shows from this region airing lately" (fallback, and used to top rows up).
 function tmdbRealityOnNow(cfg) {
-  return memoized("rnow:" + keyHash(cfg.tmdbKey), 600000, async () => {
+  return memoized("rnow:" + cfg.region + ":" + keyHash(cfg.tmdbKey), 600000, async () => {
     const pages = await Promise.all(
       [1, 2, 3].map((page) =>
         tmdb(cfg.tmdbKey, "/discover/tv", {
           with_genres: "10764", // Reality
-          with_origin_country: "US",
+          with_origin_country: cfg.region,
           "air_date.gte": daysAgo(14),
           "air_date.lte": today(),
           sort_by: "popularity.desc",
@@ -323,21 +356,43 @@ function tmdbRealityOnNow(cfg) {
   });
 }
 
-// Bravo's own recent shows plus reality franchises airing elsewhere (e.g. streaming).
-async function bravoOnNow(cfg) {
-  const shows = await tvmazeRecent().catch(() => []);
-  const list = shows
-    .filter((x) => x.imdbId && (x.network === "Bravo" || (x.type === "reality" && matchesFranchise(x.name))))
-    .sort(byPopularity);
-  return list.length ? list : franchiseOnNow(cfg);
+// Tops a thin list up from extra sources (skipping repeats by name) so rows don't shrink between seasons.
+// Extras are only fetched if they're needed.
+async function padList(primary, extras, min = 20) {
+  const seen = new Set(primary.map((m) => normName(m.name)));
+  const out = [...primary];
+  for (const get of extras) {
+    if (out.length >= min) break;
+    const list = await get().catch(() => []);
+    for (const m of list) {
+      const k = normName(m.name);
+      if (out.length < min && !seen.has(k)) {
+        seen.add(k);
+        out.push(m);
+      }
+    }
+  }
+  return out;
 }
+const trashSorted = (list) => list.slice().sort(byTrash);
+
+// Bravo's own recent shows plus reality franchises airing elsewhere, then topped up with recent and popular franchise shows.
+async function bravoOnNow(cfg) {
+  const shows = await tvmazeRecent(cfg.region).catch(() => []);
+  const primary = shows
+    .filter((x) => x.imdbId && (x.network === "Bravo" || (x.type === "reality" && matchesFranchise(x.name))))
+    .sort(byTrash);
+  return padList(primary, [() => franchiseOnNow(cfg).then(trashSorted), () => franchiseShows(cfg)], 20);
+}
+// Reality shows from the chosen region that aired lately, topped up from TMDB.
 async function realityOnNow(cfg) {
-  const shows = await tvmazeRecent().catch(() => []);
-  const list = shows
-    .filter((x) => x.imdbId && x.type === "reality" && (x.country === "US" || x.language === "English"))
-    .sort(byPopularity)
+  const shows = await tvmazeRecent(cfg.region).catch(() => []);
+  const lang = LANG_BY_REGION[cfg.region];
+  const primary = shows
+    .filter((x) => x.imdbId && x.type === "reality" && (x.country === cfg.region || (!x.country && lang && x.language === lang)))
+    .sort(byTrash)
     .slice(0, 60);
-  return list.length ? list : tmdbRealityOnNow(cfg);
+  return padList(primary, [() => tmdbRealityOnNow(cfg).then(trashSorted)], 20);
 }
 
 const TRASH = {
@@ -348,7 +403,6 @@ const TRASH = {
   drama: { name: "Reality Drama" },
   daytime: { name: "Daytime Chaos" },
   tlc: { name: "Train Wrecks" },
-  turkish: { name: "Turkish Dramas" },
   novelas: { name: "Telenovelas" },
 };
 // "custom" rows are hand-built lists; the others are plain TMDB discover queries.
@@ -383,18 +437,130 @@ CATALOGS["series/trash-novelas"] = () => ({
   },
 });
 
+// One combined Trash TV row: shows from each picked row, taken in turn so every row gets a fair share.
+async function partList(cfg, id) {
+  const def = CATALOGS[`series/trash-${id}`](cfg);
+  if (def.custom) return def.custom(cfg);
+  const pages = await Promise.all(
+    [1, 2].map((page) => tmdb(cfg.tmdbKey, def.path, { ...def.params, include_adult: "false", page: String(page) }))
+  );
+  return pages.flatMap((d) => d.results);
+}
+function trashMix(cfg) {
+  const parts = cfg.trashParts;
+  return memoized(`mix:${cfg.region}:${keyHash(cfg.tmdbKey)}:${parts.join(",")}`, 600000, async () => {
+    const lists = await Promise.all(parts.map((id) => partList(cfg, id).catch(() => [])));
+    const seen = new Set();
+    const out = [];
+    for (let i = 0; out.length < 120 && lists.some((l) => i < l.length); i++) {
+      for (const l of lists) {
+        const m = l[i];
+        if (!m) continue;
+        const k = normName(m.name);
+        if (!seen.has(k)) {
+          seen.add(k);
+          out.push(m);
+        }
+      }
+    }
+    return out;
+  });
+}
+CATALOGS["series/trash-mix"] = () => ({ kind: "tv", custom: trashMix });
+
+// Names say what's in each copy (picked rows, one combined row), so stacked copies are easy to tell apart in Stremio.
+function trashName(cfg) {
+  const names = cfg.trashParts.map((id) => TRASH[id].name);
+  const subset = cfg.trashParts.length === Object.keys(TRASH).length ? "" : names.length <= 2 ? names.join(" + ") : `${names.length} rows`;
+  const bits = [subset, cfg.layout === "one" ? "one row" : ""].filter(Boolean).join(", ");
+  return `Trash TV${bits ? ": " + bits : ""}${cfg.region === "US" ? "" : ` (${cfg.region})`}`;
+}
+
+// ---- Turkish TV: its own add-on (movies, series, reality). Always Turkey, so the region setting doesn't apply. ----
+const TURKISH_PARTS = ["movies", "series", "reality"];
+const TURKISH_NAMES = { movies: "Turkish Movies", series: "Turkish Series", reality: "Turkish Reality" };
+const turkishKey = { movies: "movie/turkish-movies", series: "series/turkish-series", reality: "series/turkish-reality" };
+CATALOGS["movie/turkish-movies"] = () => ({
+  kind: "movie",
+  path: "/discover/movie",
+  params: { with_origin_country: "TR", with_original_language: "tr", "vote_count.gte": "20", sort_by: "popularity.desc" },
+});
+CATALOGS["series/turkish-series"] = () => ({
+  kind: "tv",
+  path: "/discover/tv",
+  params: { with_origin_country: "TR", with_original_language: "tr", with_genres: "18", "vote_count.gte": "20", sort_by: "popularity.desc" },
+});
+CATALOGS["series/turkish-reality"] = () => ({ kind: "tv", custom: turkishReality });
+
+// Turkish reality is thin on TMDB alone, so recent Turkish reality from TVMaze's schedule tops it up.
+function turkishReality(cfg) {
+  return memoized("tr-reality:" + keyHash(cfg.tmdbKey), 600000, async () => {
+    const base = await tmdb(cfg.tmdbKey, "/discover/tv", {
+      with_origin_country: "TR",
+      with_original_language: "tr",
+      with_genres: "10764",
+      "vote_count.gte": "3",
+      sort_by: "popularity.desc",
+    })
+      .then((d) => d.results)
+      .catch(() => []);
+    const extra = await tvmazeRecent("TR")
+      .then((l) => l.filter((x) => x.type === "reality" && x.imdbId))
+      .catch(() => []);
+    const seen = new Set();
+    const out = [];
+    for (const m of [...base, ...extra.sort(byTrash)]) {
+      const k = normName(m.name);
+      if (!seen.has(k)) {
+        seen.add(k);
+        out.push(m);
+      }
+    }
+    return out.slice(0, 60);
+  });
+}
+
+function turkishName(cfg) {
+  return cfg.turkishParts.length === TURKISH_PARTS.length
+    ? "Turkish TV"
+    : `Turkish TV: ${cfg.turkishParts.map((p) => TURKISH_NAMES[p].replace("Turkish ", "")).join(" + ")}`;
+}
+
+function buildTurkishManifest(cfg, cfgKey) {
+  const suffix = "." + crypto.createHash("sha1").update(cfgKey || "").digest("hex").slice(0, 8);
+  const catalogs = cfg.turkishParts.map((p) => {
+    const [type, id] = turkishKey[p].split("/");
+    return { type, id, name: TURKISH_NAMES[p], extra: [{ name: "skip" }] };
+  });
+  return {
+    id: "community.turkish-tv" + suffix,
+    version: "1.8.0",
+    name: cfg.name || turkishName(cfg),
+    description: "Turkish movies, series and reality TV.",
+    resources: ["catalog"],
+    types: [...new Set(catalogs.map((c) => c.type))],
+    catalogs,
+    behaviorHints: { configurable: true, configurationRequired: false },
+  };
+}
+
 function buildTrashManifest(cfg, cfgKey) {
   const suffix = "." + crypto.createHash("sha1").update(cfgKey || "").digest("hex").slice(0, 8);
+  const skipOnly = [{ name: "skip" }];
+  const catalogs =
+    cfg.layout === "one"
+      ? [{ type: "series", id: "trash-mix", name: "Trash TV Mix", extra: skipOnly }]
+      : Object.keys(TRASH)
+          .filter((id) => cfg.trashParts.includes(id))
+          .map((id) => ({ type: "series", id: `trash-${id}`, name: TRASH[id].name, extra: skipOnly }));
   return {
     id: "community.trash-tv" + suffix,
-    version: "1.6.0",
-    name: cfg.name || "Trash TV",
+    version: "1.7.0",
+    name: cfg.name || trashName(cfg),
     description: "Bravo-style reality TV: Real Housewives, Below Deck, Vanderpump Rules and more.",
     resources: ["catalog"],
     types: ["series"],
-    catalogs: Object.keys(TRASH)
-      .filter((id) => cfg.trashParts.includes(id))
-      .map((id) => ({ type: "series", id: `trash-${id}`, name: TRASH[id].name, extra: [{ name: "skip" }] })),
+    catalogs,
     behaviorHints: { configurable: true, configurationRequired: false },
   };
 }
@@ -403,33 +569,56 @@ function buildTrashManifest(cfg, cfgKey) {
 // A short hash of the config makes every differently configured link install side by side.
 function buildManifest(cfg, cfgKey) {
   if (cfg.mode === "trash") return buildTrashManifest(cfg, cfgKey);
+  if (cfg.mode === "turkish") return buildTurkishManifest(cfg, cfgKey);
   const suffix = cfgKey ? "." + crypto.createHash("sha1").update(cfgKey).digest("hex").slice(0, 8) : "";
   const movieExtra = [{ name: "genre", options: Object.keys(GENRE_IDS.movie) }, { name: "skip" }];
   const tvExtra = [{ name: "genre", options: Object.keys(GENRE_IDS.tv) }, { name: "skip" }];
+  const skipOnly = [{ name: "skip" }];
   const { movies, shows } = effective(cfg);
-  const g = cfg.genre;
-  const prefix = g ? `${g}: ` : "";
-  // A genre install is already filtered, so it doesn't need the genre dropdown.
-  const mExtra = g ? [{ name: "skip" }] : movieExtra;
-  const tExtra = g ? [{ name: "skip" }] : tvExtra;
-  const catalogs = [];
-  if (movies) {
-    catalogs.push({ type: "movie", id: "digital-releases", name: prefix + "Digitally Available", extra: mExtra });
+  const sel = cfg.genres;
+  const each = cfg.layout === "each";
+  const gl = genreLabel(sel);
+  const typeWord = cfg.movies && !cfg.shows ? "Movies" : !cfg.movies && cfg.shows ? "Shows" : "";
+  // Names carry the genres, any movies-only / shows-only choice, and the layout, so stacked copies are easy to tell apart.
+  const label = [[gl, typeWord].filter(Boolean).join(" "), each ? "separate rows" : ""].filter(Boolean).join(", ");
+  let catalogs = [];
+  if (each) {
+    // A row for every picked genre (every genre if none were picked).
+    for (const g of sel.length ? sel : Object.keys(GENRE_PICK)) {
+      const gp = GENRE_PICK[g];
+      const sg = slug(g);
+      if (movies && gp.movie) {
+        catalogs.push({ type: "movie", id: `digital-releases--${sg}`, name: `${g}: Digitally Available`, extra: skipOnly });
+      }
+      if (shows && gp.tv) {
+        catalogs.push({ type: "series", id: `streaming-new--${sg}`, name: `${g}: New Shows Streaming`, extra: skipOnly });
+        catalogs.push({ type: "series", id: `streaming-airing--${sg}`, name: `${g}: New Episodes This Week`, extra: skipOnly });
+      }
+    }
+  } else {
+    // One combined row per catalog. With genres picked it's already filtered; otherwise Stremio gets a genre dropdown.
+    const prefix = sel.length ? `${gl}: ` : "";
+    const mExtra = sel.length ? skipOnly : movieExtra;
+    const tExtra = sel.length ? skipOnly : tvExtra;
+    if (movies) {
+      catalogs.push({ type: "movie", id: "digital-releases", name: prefix + "Digitally Available", extra: mExtra });
+    }
+    if (shows) {
+      catalogs.push({ type: "series", id: "streaming-new", name: prefix + "New Shows Streaming", extra: tExtra });
+      catalogs.push({ type: "series", id: "streaming-airing", name: prefix + "New Episodes This Week", extra: tExtra });
+    }
   }
-  if (shows) {
-    catalogs.push({ type: "series", id: "streaming-new", name: prefix + "New Shows Streaming", extra: tExtra });
-    catalogs.push({ type: "series", id: "streaming-airing", name: prefix + "New Episodes This Week", extra: tExtra });
-  }
+  catalogs = catalogs.slice(0, 60); // keep the manifest and Stremio's home screen sane
   const what = movies && shows ? "Movies with a digital release and shows streaming now" : movies ? "Movies with a digital release" : "Shows streaming now";
   return {
     id: "community.digital-releases" + suffix,
-    version: "1.3.0",
+    version: "1.7.0",
     name:
       cfg.name ||
-      (g ? `Digital Releases: ${g} (${cfg.region})` : cfgKey ? `Digital Releases (${cfg.region})` : "Digital Releases"),
-    description: `${what} in ${cfg.region}${g ? `, genre: ${g}` : ""}.`,
+      (label ? `Digital Releases: ${label} (${cfg.region})` : cfgKey ? `Digital Releases (${cfg.region})` : "Digital Releases"),
+    description: `${what} in ${cfg.region}${sel.length ? `, genres: ${sel.join(", ")}` : ""}.`,
     resources: ["catalog"],
-    types: [movies && "movie", shows && "series"].filter(Boolean),
+    types: [...new Set(catalogs.map((c) => c.type))],
     catalogs,
     behaviorHints: { configurable: true, configurationRequired: false },
   };
@@ -442,7 +631,7 @@ async function tmdb(key, path, params = {}) {
   if (key.startsWith("eyJ")) headers.Authorization = `Bearer ${key}`;
   else params = { ...params, api_key: key };
   url.search = new URLSearchParams(params);
-  const res = await fetch(url, { headers });
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
   if (res.status === 401) throw new Error("TMDB rejected the key");
   if (!res.ok) throw new Error(`TMDB error ${res.status}`);
   return res.json();
@@ -483,16 +672,23 @@ function posterUrl(cfg, imdb, m, kind) {
   return plain;
 }
 
-async function getCatalog(cfg, key, skip, genre) {
+async function getCatalog(cfg, key, skip, genre, rowGenre) {
   const def = CATALOGS[key](cfg);
   let results;
   if (def.custom) {
     // Hand-built lists (franchise searches) are paged in memory.
     results = (await def.custom(cfg)).slice(skip, skip + PAGE_SIZE);
   } else {
-    const picked = cfg.genre && cfg.mode !== "trash" ? GENRE_PICK[cfg.genre] : null;
-    const genreId = picked ? picked[def.kind === "tv" ? "tv" : "movie"] : GENRE_IDS[def.kind][genre];
-    if (genreId) def.params.with_genres = String(genreId);
+    // Which TMDB genres filter this row: one genre's own row, the genres picked at install, or (general installs) Stremio's dropdown.
+    const kindKey = def.kind === "tv" ? "tv" : "movie";
+    const chosen = rowGenre ? [rowGenre] : cfg.mode === "releases" ? cfg.genres : [];
+    if (chosen.length) {
+      const ids = [...new Set(chosen.map((g) => GENRE_PICK[g][kindKey]).filter(Boolean))];
+      if (ids.length) def.params.with_genres = ids.join("|"); // "|" means any of these genres
+    } else if (cfg.mode === "releases" && genre) {
+      const id = GENRE_IDS[def.kind][genre];
+      if (id) def.params.with_genres = String(id);
+    }
     const page = Math.floor(skip / PAGE_SIZE) + 1;
     const data = await tmdb(cfg.tmdbKey, def.path, {
       ...def.params,
@@ -527,6 +723,8 @@ async function getShowcase(cfg, kind) {
   const sources =
     kind === "tv"
       ? [["series/streaming-new", 1], ["series/streaming-new", 2], ["series/streaming-airing", 1]]
+      : kind === "turkish"
+      ? [["series/turkish-series", 1], ["movie/turkish-movies", 1], ["series/turkish-reality", 1]]
       : kind === "trash"
       ? [["series/trash-bravo", 1], ["series/trash-dating", 1], ["series/trash-reality", 1], ["series/trash-turkish", 1], ["series/trash-novelas", 1]]
       : [["movie/digital-releases", 1], ["movie/digital-releases", 2]];
@@ -545,6 +743,28 @@ async function getShowcase(cfg, kind) {
   return { posters: [...new Set(posters)] };
 }
 
+// Powers the page's "Check my setup" button. Only calls fixed services; never echoes keys.
+async function runCheck(cfg) {
+  const out = { mode: cfg.mode, region: cfg.region };
+  if (!cfg.tmdbKey) {
+    out.tmdb = { ok: false, message: "No valid TMDB key in these settings" };
+  } else {
+    try {
+      await tmdb(cfg.tmdbKey, "/configuration");
+      out.tmdb = { ok: true, message: "TMDB key works" };
+    } catch (e) {
+      out.tmdb = { ok: false, message: e.message };
+    }
+  }
+  try {
+    await tvmazeGet("/shows/1");
+    out.tvmaze = { ok: true, message: "TVMaze is reachable" };
+  } catch (e) {
+    out.tvmaze = { ok: false, message: e.message };
+  }
+  return out;
+}
+
 function send(res, status, body, cache) {
   res.statusCode = status;
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -558,16 +778,18 @@ module.exports = async (req, res) => {
   const path = (req.url || "").split("?")[0];
   // [/<config>]/manifest.json | showcase(-tv).json | catalog/<movie|series>/<id>[/<extra>].json
   const m = path.match(
-    /^(?:\/([^/]+))?\/(manifest\.json|showcase(?:-tv)?\.json|catalog\/(movie|series)\/([\w-]+)(?:\/(.+))?\.json)$/
+    /^(?:\/([^/]+))?\/(manifest\.json|check\.json|showcase(?:-tv)?\.json|catalog\/(movie|series)\/([\w-]+)(?:\/(.+))?\.json)$/
   );
   if (!m) return send(res, 404, { error: "Not found" });
 
   const cfg = parseConfig(m[1]);
 
+  if (m[2] === "check.json") return send(res, 200, await runCheck(cfg), "no-store");
+
   if (m[2] === "showcase.json" || m[2] === "showcase-tv.json") {
     if (!cfg.tmdbKey) return send(res, 200, { posters: [] }, "public, max-age=60");
     try {
-      return send(res, 200, await getShowcase(cfg, m[2] === "showcase-tv.json" ? "tv" : cfg.mode === "trash" ? "trash" : "movie"), "public, max-age=600, s-maxage=1800, stale-while-revalidate=3600");
+      return send(res, 200, await getShowcase(cfg, m[2] === "showcase-tv.json" ? "tv" : cfg.mode === "trash" ? "trash" : cfg.mode === "turkish" ? "turkish" : "movie"), "public, max-age=600, s-maxage=1800, stale-while-revalidate=3600");
     } catch {
       return send(res, 200, { posters: [] }, "public, max-age=60");
     }
@@ -577,14 +799,38 @@ module.exports = async (req, res) => {
     return send(res, 200, buildManifest(cfg, m[1]), "public, max-age=300");
   }
 
-  const key = `${m[3]}/${m[4]}`;
+  // Row ids: "digital-releases", "trash-dating", "trash-mix", or "digital-releases--comedy" (one genre's own row).
+  const [baseId, slugPart] = m[4].split("--");
+  const key = `${m[3]}/${baseId}`;
   if (!CATALOGS[key]) return send(res, 404, { metas: [], error: "Unknown catalog" });
   const isTrashKey = key.startsWith("series/trash-");
-  const trashOn = isTrashKey && cfg.mode === "trash" && cfg.trashParts.includes(key.slice(13));
+  const isTurkishKey = /^(movie|series)\/turkish-/.test(key);
   const eff = effective(cfg);
-  const blocked = isTrashKey
-    ? !trashOn
-    : cfg.mode === "trash" || (m[3] === "movie" && !eff.movies) || (m[3] === "series" && !eff.shows);
+  let rowGenre = "";
+  let blocked;
+  if (isTurkishKey) {
+    blocked = cfg.mode !== "turkish" || !!slugPart || !cfg.turkishParts.includes(baseId.slice(8));
+  } else if (isTrashKey) {
+    const part = baseId.slice(6); // after "trash-"
+    blocked =
+      cfg.mode !== "trash" ||
+      !!slugPart ||
+      (part === "mix" ? cfg.layout !== "one" : cfg.layout !== "each" || !cfg.trashParts.includes(part));
+  } else {
+    blocked = cfg.mode !== "releases" || (m[3] === "movie" && !eff.movies) || (m[3] === "series" && !eff.shows);
+    if (slugPart) {
+      rowGenre = SLUG_TO_GENRE[slugPart] || "";
+      const gp = rowGenre && GENRE_PICK[rowGenre];
+      blocked =
+        blocked ||
+        !gp ||
+        cfg.layout !== "each" ||
+        (cfg.genres.length > 0 && !cfg.genres.includes(rowGenre)) ||
+        !gp[m[3] === "movie" ? "movie" : "tv"];
+    } else if (cfg.layout === "each") {
+      blocked = true; // "separate rows" installs only offer the per-genre rows
+    }
+  }
   if (blocked) {
     return send(res, 200, { metas: [] }, "public, max-age=300");
   }
@@ -595,7 +841,7 @@ module.exports = async (req, res) => {
   const skip = Number(extra.get("skip")) || 0;
   const genre = extra.get("genre") || "";
   try {
-    const catalog = await getCatalog(cfg, key, skip, genre);
+    const catalog = await getCatalog(cfg, key, skip, genre, rowGenre);
     return send(res, 200, catalog, "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400");
   } catch (err) {
     console.error(err.message);

@@ -81,6 +81,11 @@
   .btn.ghost { background:rgba(255,255,255,.05); color:var(--text); border-color:rgba(255,255,255,.28); }
   .btn.ghost:hover { background:rgba(255,255,255,.12); border-color:var(--cyan); }
   .btn[aria-disabled="true"], .btn:disabled { opacity:.4; cursor:not-allowed; transform:none; box-shadow:none; }
+  .check { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+  .check li { display:flex; gap:10px; align-items:flex-start; padding:11px 15px; border-radius:15px; background:rgba(255,255,255,.07); border:1px solid var(--line); font-size:.92rem; }
+  .check b { flex:0 0 auto; }
+  .check .good b { color:var(--lime); }
+  .check .bad b { color:var(--pink); }
   .url { font-size:.85rem; color:var(--muted); word-break:break-all; margin:0; }
   .url code { color:var(--cyan); }
   .warn { font-size:.85rem; color:var(--muted); border-top:1px solid var(--line); padding-top:16px; margin:0; }
@@ -128,6 +133,7 @@
     <div class="tabs" role="tablist" aria-label="Add-on type">
       <button type="button" role="tab" class="tab" data-mode="releases" aria-selected="true">Releases</button>
       <button type="button" role="tab" class="tab" data-mode="trash" aria-selected="false">Trash TV</button>
+      <button type="button" role="tab" class="tab" data-mode="turkish" aria-selected="false">Turkish TV</button>
     </div>
     <div>
       <label for="tmdb">TMDB API key (required)</label>
@@ -186,7 +192,8 @@
     <div class="panel" data-panel="releases">
       <label id="genreLabel">Genre (optional)</label>
       <div class="chips" id="chips" role="group" aria-labelledby="genreLabel"></div>
-      <p class="hint">Leave it empty to install everything, with a genre filter inside Stremio. Tap one genre to install just that genre. Want another? Come back, pick a different genre, and install again.</p>
+      <div class="chips" id="layRel" role="group" aria-label="Row layout"></div>
+      <p class="hint">Leave it empty to install everything, with a genre filter inside Stremio. Tap genres to pick several. Choose one combined row, or a separate row for each genre. With nothing picked, separate rows means a row for every genre, which is a lot of rows. Want another? Come back, pick different genres, and install again.</p>
     </div>
     <div class="panel" data-panel="releases">
       <label>What to include</label>
@@ -203,7 +210,13 @@
     <div class="panel" data-panel="trash" hidden>
       <label id="trashLabel">What counts as trash</label>
       <div class="chips" id="trashChips" role="group" aria-labelledby="trashLabel"></div>
-      <p class="hint">Bravo-style reality in its own add-on: franchises like Real Housewives, Below Deck, Vanderpump Rules, Summer House and Love Island. Tap a row to turn it off.</p>
+      <div class="chips" id="layTrash" role="group" aria-label="Row layout"></div>
+      <p class="hint">Bravo-style reality in its own add-on: franchises like Real Housewives, Below Deck, Vanderpump Rules, Summer House and Love Island. Leave it empty to install every row. Tap rows to pick several, then choose one combined row or separate rows. Want another? Come back, pick different rows, and install again.</p>
+    </div>
+    <div class="panel" data-panel="turkish" hidden>
+      <label id="turkLabel">What to include</label>
+      <div class="chips" id="turkChips" role="group" aria-labelledby="turkLabel"></div>
+      <p class="hint">Turkish movies, series and reality, each as its own row. Leave it empty to install all three. Tap rows to pick some, and tap again to remove. Want another? Come back, pick different rows, and install again.</p>
     </div>
     <div>
       <label for="name">Add-on name (optional)</label>
@@ -215,7 +228,9 @@
       <a class="btn primary" id="install" href="#" aria-disabled="true">Install in Stremio</a>
       <button class="btn ghost" id="copy" type="button" disabled>Copy add-on link</button>
       <button class="btn ghost" id="preview" type="button" disabled>Preview catalog</button>
+      <button class="btn ghost" id="check" type="button" disabled>Check my setup</button>
     </div>
+    <ul class="check" id="checkOut" aria-live="polite" hidden></ul>
     <p class="url" id="url">Enter your TMDB key to generate the add-on link.</p>
     <p class="warn">Your keys are stored inside the add-on link so Stremio can use them. Don't share the link publicly. This site doesn't save your keys: it passes them on to TMDB (and your poster provider) to fetch titles, but hosting logs may record the addresses requested, which include your link.</p>
   </form>
@@ -230,6 +245,10 @@
       <option value="movie/digital-releases">Movies: digitally available</option>
       <option value="series/streaming-new">Shows: new and streaming</option>
       <option value="series/streaming-airing">Shows: new episodes this week</option>
+      <option value="movie/turkish-movies">Turkish TV: movies</option>
+      <option value="series/turkish-series">Turkish TV: series</option>
+      <option value="series/turkish-reality">Turkish TV: reality</option>
+      <option value="series/trash-mix">Trash TV: one combined row</option>
       <option value="series/trash-bravo">Trash TV: Bravo universe</option>
       <option value="series/trash-bravonow">Trash TV: Bravo universe, on now</option>
       <option value="series/trash-reality">Trash TV: reality, on now</option>
@@ -237,11 +256,13 @@
       <option value="series/trash-drama">Trash TV: reality drama</option>
       <option value="series/trash-daytime">Trash TV: daytime chaos</option>
       <option value="series/trash-tlc">Trash TV: train wrecks</option>
-      <option value="series/trash-turkish">Trash TV: Turkish dramas</option>
+
       <option value="series/trash-novelas">Trash TV: telenovelas</option>
     </select>
-    <label for="pvGenre" style="font-size:.9rem;display:block;margin-top:10px">Genre (optional)</label>
-    <select id="pvGenre"><option value="">All genres</option></select>
+    <div id="pvGenreBox">
+      <label for="pvGenre" style="font-size:.9rem;display:block;margin-top:10px">Genre (optional)</label>
+      <select id="pvGenre"><option value="">All genres</option></select>
+    </div>
   </div>
   <div class="wall" id="wall"><div class="msg">Press "Preview catalog" to see what your settings return.</div></div>
 
@@ -255,9 +276,12 @@
   const $ = (id) => document.getElementById(id);
   const KEY_RE = /^[\w.-]+$/;
   const RPDB_RE = /^[\w-]+$/;
-  let pickedGenre = ""; // "" = general install; otherwise a single-genre install
+  let pickedGenres = []; // genres picked on Releases (empty = every genre)
+  let layoutRel = "one"; // "one" = one combined row, "each" = a row per genre
   let mode = "releases"; // "releases" or "trash" (the active tab)
-  let trashOn = ["bravo", "bravonow", "reality", "dating", "drama", "daytime", "tlc", "turkish", "novelas"]; // Trash TV rows currently on
+  let pickedTrash = []; // Trash TV rows picked (empty = every row)
+  let layoutTrash = "each"; // "each" = a row per pick, "one" = one combined row
+  let pickedTurk = []; // Turkish TV rows picked (empty = all three)
 
   const enc = (o) => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const dec = (s) => JSON.parse(decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/")))));
@@ -275,12 +299,12 @@
       $("name").value = c.name || "";
       $("optMovies").checked = c.movies !== false;
       $("optShows").checked = c.shows !== false;
-      pickedGenre = typeof c.genre === "string" ? c.genre : "";
-      mode = c.mode === "trash" ? "trash" : "releases";
-      if (Array.isArray(c.trashParts)) {
-        const keep = c.trashParts.filter((p) => ["bravo", "bravonow", "reality", "dating", "drama", "daytime", "tlc", "turkish", "novelas"].includes(p));
-        if (keep.length) trashOn = keep;
-      }
+      pickedGenres = (Array.isArray(c.genres) ? c.genres : [c.genre]).filter((g) => typeof g === "string");
+      layoutRel = c.layout === "each" ? "each" : "one";
+      mode = c.mode === "trash" ? "trash" : c.mode === "turkish" ? "turkish" : "releases";
+      pickedTrash = Array.isArray(c.trashParts) && c.trashParts.length < 8 ? c.trashParts.filter((p) => typeof p === "string") : [];
+      layoutTrash = c.layout === "one" ? "one" : "each";
+      pickedTurk = Array.isArray(c.turkishParts) && c.turkishParts.length < 3 ? c.turkishParts.filter((p) => typeof p === "string") : [];
       $("provider").value = c.posterProvider || (c.rpdbKey ? "rpdb" : "tmdb");
       if (c.region) $("region").value = c.region;
       if (c.days) $("days").value = String(c.days);
@@ -307,11 +331,16 @@
     if (nm) cfg.name = nm;
     if (mode === "trash") {
       cfg.mode = "trash";
-      if (trashOn.length < TRASH_PARTS.length) cfg.trashParts = trashOn;
+      if (pickedTrash.length && pickedTrash.length < 8) cfg.trashParts = pickedTrash.slice();
+      if (layoutTrash === "one") cfg.layout = "one";
+    } else if (mode === "turkish") {
+      cfg.mode = "turkish";
+      if (pickedTurk.length && pickedTurk.length < 3) cfg.turkishParts = pickedTurk.slice();
     } else {
       if (!$("optMovies").checked) cfg.movies = false;
       if (!$("optShows").checked) cfg.shows = false;
-      if (pickedGenre) cfg.genre = pickedGenre;
+      if (pickedGenres.length) cfg.genres = pickedGenres.slice();
+      if (layoutRel === "each") cfg.layout = "each";
     }
     if (provider === "rpdb") cfg.rpdbKey = rpdb;
     if (provider === "topposters") cfg.topKey = top;
@@ -332,6 +361,7 @@
     install.href = ok ? `stremio://${location.host}${path}` : "#";
     $("copy").disabled = !ok;
     $("preview").disabled = !ok;
+    $("check").disabled = !ok;
     if (ok && reelFor === "") {
       const tag = $("tmdb").value.trim();
       clearTimeout(reelTimer);
@@ -375,7 +405,7 @@
     const wall = $("wall");
     $("count").textContent = "";
     wall.innerHTML = Array.from({ length: 12 }, () => '<div class="skeleton"></div>').join("");
-    fetch(`/${config}/catalog/${$("pvCat").value}${$("pvGenre").value ? "/genre=" + encodeURIComponent($("pvGenre").value) : ""}.json`)
+    fetch(`/${config}/catalog/${previewPath()}.json`)
       .then((r) => r.json().then((j) => { if (!r.ok) throw new Error(j.error || r.status); return j; }))
       .then(({ metas }) => {
         if (!metas.length) { wall.innerHTML = '<div class="msg">No titles found for this region and range. Try a longer range.</div>'; return; }
@@ -415,10 +445,10 @@
     const key = $("tmdb").value.trim();
     const cfg = { region: $("region").value, days: Number($("days").value) };
     if (key && KEY_RE.test(key)) cfg.tmdbKey = key; // otherwise the server's own key is used, if set
-    if (m === "trash") cfg.mode = "trash";
+    if (m !== "releases") cfg.mode = m;
     loadReel(`/${enc(cfg)}/showcase.json`, "top-" + m, "reel", ++topSeq);
   }
-  if (mode === "trash") loadTopFor("trash");
+  if (mode !== "releases") loadTopFor(mode);
   else loadReel("/showcase.json", "default");
   loadReel("/showcase-tv.json", "default", "reelTv");
 
@@ -437,27 +467,37 @@
     const sel = $("pvCat");
     [...sel.options].forEach((o) => {
       const isTrash = o.value.startsWith("series/trash-");
-      const on = mode === "trash"
-        ? isTrash && trashOn.includes(o.value.slice(13))
-        : !isTrash && (o.value.startsWith("series") ? tv : mv);
+      const isTurk = o.value.includes("turkish-");
+      const on = mode === "releases"
+        ? !isTrash && !isTurk && (o.value.startsWith("series") ? tv : mv)
+        : mode === "trash" ? isTrash && trashOn(o.value) : isTurk && turkOn(o.value);
       o.disabled = !on;
       o.hidden = !on;
     });
     if (sel.selectedOptions[0].disabled) {
-      sel.value = [...sel.options].find((o) => !o.disabled).value;
+      const first = [...sel.options].find((o) => !o.disabled);
+      if (first) sel.value = first.value;
       fillGenres();
     }
-    $("reel").style.display = mv || mode === "trash" ? "" : "none";
-    $("reelTv").style.display = tv && mode !== "trash" ? "" : "none";
-    // A picked genre is applied by the add-on itself, so the preview's genre dropdown steps aside.
-    const noPvGenre = !!pickedGenre || mode === "trash";
+    $("reel").style.display = mv || mode !== "releases" ? "" : "none";
+    $("reelTv").style.display = tv && mode === "releases" ? "" : "none";
+    // Only the Releases tab has genre filters for the preview to use.
+    const noPvGenre = mode !== "releases" || pickedGenres.length > 0 || layoutRel === "each";
+    $("pvGenreBox").hidden = noPvGenre;
     $("pvGenre").disabled = noPvGenre;
     if (noPvGenre) $("pvGenre").value = "";
-    $("install").textContent = mode === "trash" ? "Install Trash TV" : pickedGenre ? "Install " + pickedGenre : "Install in Stremio";
+    const trashPicks = pickedTrash.length > 0 && pickedTrash.length < TRASH_PARTS.length;
+    const turkPicks = pickedTurk.length > 0 && pickedTurk.length < TURK_PARTS.length;
+    $("install").textContent = mode === "trash"
+      ? (trashPicks ? "Install " + pickedTrash.map(trashLabel).join(" + ") : "Install Trash TV")
+      : mode === "turkish"
+      ? (turkPicks ? "Install " + pickedTurk.map(turkLabel).join(" + ") : "Install Turkish TV")
+      : pickedGenres.length ? "Install " + pickedGenres.join(" + ") : "Install in Stremio";
     document.querySelectorAll(".panel").forEach((p) => { p.hidden = p.dataset.panel !== mode; });
     document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.mode === mode)));
-    $("regionRow").hidden = mode === "trash";
-    $("name").placeholder = mode === "trash" ? "Trash TV" : "Digital Releases";
+    $("daysBox").hidden = mode !== "releases";
+    $("regionRow").hidden = mode === "turkish"; // Turkish TV is always Turkey, so the region doesn't apply
+    $("name").placeholder = mode === "trash" ? "Trash TV" : mode === "turkish" ? "Turkish TV" : "Digital Releases";
   }
   fillGenres();
 
@@ -465,22 +505,9 @@
   const PICK = ["Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Kids", "Music", "Mystery", "Reality", "Romance", "Science Fiction", "Thriller", "War", "Western"];
   const MOVIE_ONLY = ["History", "Horror", "Music", "Romance", "Thriller"];
   const TV_ONLY = ["Kids", "Reality"];
-  // Trash TV rows (mirrors the server): tap to turn a row off; at least one stays on.
-  const TRASH_PARTS = [["bravo", "Bravo universe"], ["bravonow", "Bravo universe: on now"], ["reality", "Reality: on now"], ["dating", "Dating and love shows"], ["drama", "Reality drama"], ["daytime", "Daytime chaos"], ["tlc", "Train wrecks"], ["turkish", "Turkish dramas"], ["novelas", "Telenovelas"]];
-  function renderTrashChips() {
-    $("trashChips").innerHTML = TRASH_PARTS.map(([id, label]) =>
-      `<button type="button" class="chip" aria-pressed="${trashOn.includes(id)}" data-t="${id}">${esc(label)}</button>`).join("");
-  }
-  $("trashChips").addEventListener("click", (e) => {
-    const b = e.target.closest("button[data-t]");
-    if (!b) return;
-    const id = b.dataset.t;
-    if (trashOn.includes(id)) { if (trashOn.length > 1) trashOn = trashOn.filter((x) => x !== id); }
-    else trashOn = TRASH_PARTS.map(([k]) => k).filter((k) => k === id || trashOn.includes(k));
-    renderTrashChips();
-    update();
-    if (!$("preview").disabled) $("preview").click();
-  });
+  // Trash TV rows (mirrors the server): tap one to install just that row; tap it again for every row.
+  const TRASH_PARTS = [["bravo", "Bravo universe"], ["bravonow", "Bravo universe: on now"], ["reality", "Reality: on now"], ["dating", "Dating and love shows"], ["drama", "Reality drama"], ["daytime", "Daytime chaos"], ["tlc", "Train wrecks"], ["novelas", "Telenovelas"]];
+  const trashLabel = (id) => (TRASH_PARTS.find(([k]) => k === id) || [id, id])[1];
   document.querySelector(".tabs").addEventListener("click", (e) => {
     const t = e.target.closest(".tab");
     if (!t || t.dataset.mode === mode) return;
@@ -491,29 +518,156 @@
   });
   renderTrashChips();
 
+  // "Check my setup": the server checks TMDB and TVMaze; poster providers are tested from the browser,
+  // so the server never fetches a URL you typed in.
+  const testImage = (url, ms = 8000) => new Promise((resolve) => {
+    const img = new Image();
+    const t = setTimeout(() => resolve(false), ms);
+    img.onload = () => { clearTimeout(t); resolve(true); };
+    img.onerror = () => { clearTimeout(t); resolve(false); };
+    img.src = url;
+  });
+  function posterTest() {
+    const p = $("provider").value;
+    if (p === "rpdb") return ["RPDB", `https://api.ratingposterdb.com/${$("rpdb").value.trim()}/imdb/poster-default/tt0111161.jpg?fallback=true`];
+    if (p === "topposters") return ["Top Posters", `https://api.top-posters.com/${$("top").value.trim()}/imdb/poster/tt0111161.jpg`];
+    if (p === "custom") return ["Your poster pattern", $("tpl").value.trim().split("{imdb_id}").join("tt0111161").split("{tmdb_id}").join("278").split("{type}").join("movie")];
+    return null;
+  }
+  $("check").addEventListener("click", async () => {
+    const { ok, config } = state();
+    if (!ok) return;
+    const list = $("checkOut");
+    const line = (good, text) => `<li class="${good ? "good" : "bad"}"><b>${good ? "✓" : "✗"}</b><span>${esc(text)}</span></li>`;
+    list.hidden = false;
+    list.innerHTML = "<li><span>Checking...</span></li>";
+    let html = "";
+    try {
+      const j = await (await fetch(`/${config}/check.json`)).json();
+      html += line(j.tmdb.ok, j.tmdb.message);
+      if (mode !== "releases") html += line(j.tvmaze.ok, j.tvmaze.message);
+    } catch {
+      html += line(false, "Couldn't reach your add-on's server.");
+    }
+    const pt = posterTest();
+    if (pt) {
+      const good = await testImage(pt[1]);
+      html += line(good, good ? pt[0] + " posters load" : pt[0] + " posters didn't load. Check the key or pattern.");
+    }
+    list.innerHTML = html;
+  });
+
   function eff() {
-    if (mode === "trash") return { mv: false, tv: true };
-    const g = pickedGenre;
-    let mv = $("optMovies").checked && !TV_ONLY.includes(g);
-    let tv = $("optShows").checked && !MOVIE_ONLY.includes(g);
-    if (!mv && !tv && g) { mv = !TV_ONLY.includes(g); tv = !MOVIE_ONLY.includes(g); }
+    if (mode !== "releases") return { mv: false, tv: true };
+    const picked = pickedGenres;
+    let mv = $("optMovies").checked && (!picked.length || picked.some((g) => !TV_ONLY.includes(g)));
+    let tv = $("optShows").checked && (!picked.length || picked.some((g) => !MOVIE_ONLY.includes(g)));
+    if (!mv && !tv && picked.length) {
+      mv = picked.some((g) => !TV_ONLY.includes(g));
+      tv = picked.some((g) => !MOVIE_ONLY.includes(g));
+    }
     return { mv, tv };
   }
+
+  // Which Trash TV options the preview may show: the combined row, or the picked (or every) separate rows.
+  function trashOn(v) {
+    if (v === "series/trash-mix") return layoutTrash === "one";
+    return layoutTrash === "each" && (!pickedTrash.length || pickedTrash.includes(v.slice(13)));
+  }
+
+  // Which genres exist for a type (mirrors the server's GENRE_PICK).
+  const hasType = (g, type) => (type === "movie" ? !TV_ONLY.includes(g) : !MOVIE_ONLY.includes(g));
+  const slugOf = (g) => g.toLowerCase().replace(/\s+/g, "-");
+
+  // The catalog the preview asks for. Separate rows are previewed one genre at a time, since that's what Stremio shows.
+  function previewPath() {
+    const base = $("pvCat").value;
+    if (mode !== "releases") return base;
+    if (layoutRel === "each") {
+      const type = base.startsWith("series") ? "tv" : "movie";
+      const pool = pickedGenres.length ? pickedGenres : PICK;
+      const g = pool.find((x) => hasType(x, type));
+      return g ? `${base}--${slugOf(g)}` : base;
+    }
+    const pg = $("pvGenre").value;
+    return base + (pg && !$("pvGenreBox").hidden ? "/genre=" + encodeURIComponent(pg) : "");
+  }
+
+  // Genre chips: tap to add or remove; any number can be picked.
   function renderChips() {
     $("chips").innerHTML = PICK.map((g) =>
-      `<button type="button" class="chip" aria-pressed="${g === pickedGenre}" data-g="${esc(g)}">${esc(g)}</button>`).join("");
+      `<button type="button" class="chip" aria-pressed="${pickedGenres.includes(g)}" data-g="${esc(g)}">${esc(g)}</button>`).join("");
   }
-  // Tap a genre to pick it; tap it again to go back to the general install.
   $("chips").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-g]");
     if (!b) return;
-    pickedGenre = pickedGenre === b.dataset.g ? "" : b.dataset.g;
-    renderChips();
-    update();
+    const g = b.dataset.g;
+    pickedGenres = pickedGenres.includes(g) ? pickedGenres.filter((x) => x !== g) : [...pickedGenres, g];
+    renderChips(); update();
     if (!$("preview").disabled) $("preview").click();
   });
-  renderChips();
 
+  // Trash TV row chips: tap to add or remove; any number can be picked.
+  function renderTrashChips() {
+    $("trashChips").innerHTML = TRASH_PARTS.map(([id, label]) =>
+      `<button type="button" class="chip" aria-pressed="${pickedTrash.includes(id)}" data-t="${id}">${esc(label)}</button>`).join("");
+  }
+  $("trashChips").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-t]");
+    if (!b) return;
+    const id = b.dataset.t;
+    pickedTrash = pickedTrash.includes(id) ? pickedTrash.filter((x) => x !== id) : [...pickedTrash, id];
+    renderTrashChips(); update();
+    if (!$("preview").disabled) $("preview").click();
+  });
+
+  // Layout: one combined row, or separate rows.
+  const layoutButtons = (cur, eachLabel) =>
+    [["one", "One combined row"], ["each", eachLabel]].map(([v, t]) =>
+      `<button type="button" class="chip" aria-pressed="${v === cur}" data-lay="${v}">${esc(t)}</button>`).join("");
+  function renderLayouts() {
+    $("layRel").innerHTML = layoutButtons(layoutRel, "Separate row per genre");
+    $("layTrash").innerHTML = layoutButtons(layoutTrash, "Separate rows");
+  }
+  $("layRel").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-lay]");
+    if (!b) return;
+    layoutRel = b.dataset.lay;
+    renderLayouts(); update();
+    if (!$("preview").disabled) $("preview").click();
+  });
+  $("layTrash").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-lay]");
+    if (!b) return;
+    layoutTrash = b.dataset.lay;
+    renderLayouts(); update();
+    if (!$("preview").disabled) $("preview").click();
+  });
+
+  // Turkish TV rows: movies, series and reality (always Turkey, so no layout or region choice).
+  const TURK_PARTS = [["movies", "Turkish movies"], ["series", "Turkish series"], ["reality", "Turkish reality"]];
+  const turkLabel = (id) => (TURK_PARTS.find(([k]) => k === id) || [id, id])[1];
+  function turkOn(v) {
+    const part = v.split("turkish-")[1];
+    return !pickedTurk.length || pickedTurk.includes(part);
+  }
+  function renderTurkChips() {
+    $("turkChips").innerHTML = TURK_PARTS.map(([id, label]) =>
+      `<button type="button" class="chip" aria-pressed="${pickedTurk.includes(id)}" data-tk="${id}">${esc(label)}</button>`).join("");
+  }
+  $("turkChips").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-tk]");
+    if (!b) return;
+    const id = b.dataset.tk;
+    pickedTurk = pickedTurk.includes(id) ? pickedTurk.filter((x) => x !== id) : [...pickedTurk, id];
+    renderTurkChips(); update();
+    if (!$("preview").disabled) $("preview").click();
+  });
+
+  renderChips();
+  renderTrashChips();
+  renderLayouts();
+  renderTurkChips();
   update();
 </script>
 </body>

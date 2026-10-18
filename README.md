@@ -8,25 +8,46 @@ A Stremio add-on that lists movies you can rent or buy right now, plus new shows
 - **New Shows Streaming:** shows that premiered recently and are on a streaming or rental service in your region.
 - **New Episodes This Week:** shows with an episode airing in the last 7 days.
 
-Movies and TV shows can each be switched off on the install page. By default you get the general install, where every catalog has a genre dropdown inside Stremio.
+Movies and TV shows can each be switched off on the install page. By default you get the general install: every genre, with a genre dropdown inside Stremio.
+
+**Pick genres:** tap as many genres as you like on the install page. With genres picked, the install only includes those genres. Shows and movies are filtered to the genres that exist for each type (Horror is movies-only, Kids is shows-only, and so on).
+
+**Layout:** choose how the picks appear in Stremio.
+- **One combined row (default):** each catalog combines the picked genres into one row, such as "Comedy + Horror: Digitally Available".
+- **Separate row per genre:** every picked genre gets its own rows, such as "Comedy: Digitally Available" and "Horror: Digitally Available". With nothing picked, this makes a row for every genre, which is a lot of rows, so it's best with a few genres picked.
+
+Each choice produces its own add-on ID and name, so you can install again with different genres or layouts and they stack side by side. Older single-genre links still work and come back as one pick.
 
 To install just one genre, tap it on the install page (for example Comedy). That install gets its own catalogs already filtered to the genre. Each setup has its own add-on ID, so you can install again with a different genre and they stack side by side. Some genres exist only for movies (Horror, Romance, Thriller, History, Music) or only for shows (Kids, Reality), and those installs include only the matching catalogs.
 
+## Turkish TV
+
+The install page has a third tab, **Turkish TV**, with its own add-on. It has three separate rows, each one picked or left out with the chips:
+
+- **Turkish Movies:** Turkish-language films made in Turkey.
+- **Turkish Series:** Turkish-language dramas (Drama genre, with a minimum vote count so obscure titles don't dominate).
+- **Turkish Reality:** Turkish reality shows, topped up with recent Turkish reality from TVMaze's schedule because TMDB alone has few.
+
+Turkish TV is always about Turkey, so the region setting doesn't apply. Turkish Dramas used to be a row on Trash TV; it now lives here.
+
 ## Trash TV
 
-The install page has a second tab, **Trash TV**. It installs its own separate add-on (not a genre of the main one) with nine rows of trashy TV:
+The install page has a second tab, **Trash TV**. It installs its own separate add-on (not a genre of the main one) with eight rows of trashy TV:
 
 - **Bravo Universe:** popular shows from franchises like Real Housewives, Below Deck, Vanderpump Rules, Summer House and Southern Charm.
 - **Bravo Universe: On Now:** shows that aired on Bravo in the last 7 days (from TVMaze's real TV schedule), plus those franchises airing elsewhere, such as on streaming.
-- **Reality: On Now:** US reality shows that aired in the last 7 days, from TVMaze's schedule. If TVMaze is slow or down, both On Now rows fall back to TMDB (episodes in the last 14 days).
+- **Reality: On Now:** reality shows from your chosen region that aired in the last 7 days, from TVMaze's schedule. If TVMaze is slow or down, both On Now rows fall back to TMDB (episodes in the last 14 days).
 - **Dating and Love Shows:** Love Island, Love Is Blind, Too Hot to Handle, The Bachelor, Temptation Island, Married at First Sight and more.
 - **Reality Drama:** Jersey Shore, Teen Mom, Dance Moms, Love & Hip Hop, Basketball Wives, The Kardashians, Catfish and more.
 - **Daytime Chaos:** Jerry Springer, Maury, Dr. Phil, Judge Judy, Divorce Court and more.
 - **Train Wrecks:** My 600-lb Life, Hoarders, Dr. Pimple Popper, Sister Wives, Toddlers & Tiaras and more.
-- **Turkish Dramas:** Turkish-language dramas made in Turkey.
 - **Telenovelas:** Spanish-language soaps.
 
-Most rows are matched by show name (see `FRANCHISES` and `GROUPS` in `api/index.js`), so you can add or remove names there. Tap a row to turn it off. It can be installed alongside the Releases add-on.
+**Region:** pick a region on the Trash TV tab (for example Turkey, the UK or Australia) and the On Now rows show what's actually airing there, using TVMaze's schedules by country. The default is the US.
+
+**Smarter rows:** the On Now rows are topped up with recent and popular shows when a quiet part of the season would leave them thin. The franchise rows (Bravo Universe, Dating and Love Shows, Reality Drama, Daytime Chaos, Train Wrecks) and the On Now rows are sorted by a guilty-pleasure score: shows that are hugely watched but not well rated come first. Turkish Dramas and Telenovelas stay in plain popularity order.
+
+Most rows are matched by show name (see `FRANCHISES` and `GROUPS` in `api/index.js`), so you can add or remove names there. Install every row together (the default), or tap any number of rows to pick them. Choose **one combined row** (the picks are mixed into a single row, taking shows from each in turn) or **separate rows** (the default, one per pick). Each choice gets its own name (for example "Trash TV: Dating and Love Shows + Turkish Dramas"), so you can stack several side by side. It can also be installed alongside the Releases add-on.
 
 ## Deploy your own
 
@@ -47,11 +68,17 @@ Most rows are matched by show name (see `FRANCHISES` and `GROUPS` in `api/index.
 
 Keys belong in Vercel's environment variables, never in the repo.
 
+If you share your deployment widely, set up Vercel's usage alerts so a burst of visitors doesn't surprise you.
+
 ## Poster styles
 
 Plain TMDB posters, [RPDB](https://ratingposterdb.com) rating posters, [Top Posters](https://top-posters.com/api) rating posters, or a custom URL pattern from another provider. Use `{imdb_id}`, `{tmdb_id}` and `{type}` (movie or tv) as placeholders in the custom pattern.
 
 Top Posters needs your own API key (free keys include 10,000 requests a month). Badge style and language are set in your Top Posters dashboard. The add-on asks Top Posters for the poster by IMDb ID and passes the plain TMDB poster as a fallback.
+
+## Checking your setup
+
+The **Check my setup** button on the install page tests your settings with one tap: whether your TMDB key works, whether TVMaze answers (on the Trash TV tab), and whether your chosen poster provider's images load. Poster tests run in your browser, so the server never fetches a URL you typed in, and no key is ever shown in the results. The server side of the check is `/<settings>/check.json`.
 
 ## Updating without breaking installs
 
